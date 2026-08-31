@@ -1,537 +1,327 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Header } from './components/Header';
-import { Sidebar, AppTab } from './components/Sidebar';
-import { FleetModuleView, FleetModuleId } from './components/FleetModuleView';
-import { EmailList } from './components/EmailList';
-import { EmailDetail } from './components/EmailDetail';
-import { ContactsView } from './components/ContactsView';
-import { AIChatView } from './components/AIChatView';
-import { SettingsView } from './components/SettingsView';
-import { ComposeModal } from './components/ComposeModal';
-import { ConfigModal } from './components/ConfigModal';
-import { NotificationToast } from './components/NotificationToast';
+import { useMemo, useState } from 'react';
 import {
-  EmailMessage,
-  ChatMessage,
-  SystemStatus,
-  SendEmailPayload,
-  PersonalizationSettings,
-  Contact
-} from './types';
+  Activity,
+  AlertTriangle,
+  Archive,
+  ArrowLeft,
+  ArrowRight,
+  BarChart3,
+  Bell,
+  CalendarDays,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  ClipboardCheck,
+  ClipboardList,
+  Clock3,
+  Cloud,
+  Command,
+  Copy,
+  CreditCard,
+  Database,
+  Download,
+  FileCheck2,
+  FileText,
+  Filter,
+  Gauge,
+  Hammer,
+  Inbox,
+  LayoutDashboard,
+  LifeBuoy,
+  MapPin,
+  Menu,
+  MessageSquare,
+  MoreHorizontal,
+  Package,
+  PanelRight,
+  Paperclip,
+  PenLine,
+  Plus,
+  RefreshCw,
+  Search,
+  Send,
+  Settings2,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+  Truck,
+  Upload,
+  UserRound,
+  Users,
+  Wrench,
+  X,
+  Zap,
+} from 'lucide-react';
 
-export default function App() {
-  const [status, setStatus] = useState<SystemStatus | null>(null);
-  const [currentTab, setCurrentTab] = useState<AppTab>('inbox');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [activeInbox, setActiveInbox] = useState<string>('moms@agentmail.to');
-  const [emails, setEmails] = useState<EmailMessage[]>([]);
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+// FleetMail design-only prototype: all records and state below are local mock data.
+// There are intentionally no fetch calls, CRUD mutations, database queries, or live workflows.
 
-  // Modals & Notifications
-  const [isComposeOpen, setIsComposeOpen] = useState<boolean>(false);
-  const [composeInitialData, setComposeInitialData] = useState<{ to?: string; subject?: string; body?: string }>({});
-  const [isHelpConfigOpen, setIsHelpConfigOpen] = useState<boolean>(false);
-  const [newIncomingNotification, setNewIncomingNotification] = useState<EmailMessage | null>(null);
-  const knownEmailIdsRef = useRef<Set<string>>(new Set());
+type PageId =
+  | 'dashboard'
+  | 'vehicles'
+  | 'vehicle-detail'
+  | 'work-orders'
+  | 'inspection'
+  | 'schedule'
+  | 'dispatch'
+  | 'maintenance'
+  | 'customers'
+  | 'parts'
+  | 'financials'
+  | 'documents'
+  | 'team'
+  | 'settings';
 
-  // Personalization settings
-  const [settings, setSettings] = useState<PersonalizationSettings>({
-    personalityFocus: 'Professional',
-    importantEmailsOnly: true,
-    dailyAIDigest: false,
-    connectedAccounts: [
-      {
-        id: 'acc-1',
-        name: 'AgentMail Active Inbox (Dots-3)',
-        type: 'agentmail',
-        email: 'moms@agentmail.to'
-      },
-      {
-        id: 'acc-2',
-        name: 'Work Email (Google)',
-        type: 'google',
-        email: 'user@company.com'
-      },
-      {
-        id: 'acc-3',
-        name: 'Personal Calendar (Outlook)',
-        type: 'outlook',
-        email: 'user@outlook.com'
-      }
-    ]
-  });
+type Status = 'In service' | 'Due soon' | 'Out of service' | 'Pending approval' | 'Scheduled' | 'In progress' | 'Ready to invoice' | 'Paid' | 'Low stock' | 'Available' | 'Overdue';
 
-  // AI Chat Messages initialized to match Image 4
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    {
-      id: 'msg_welcome_ai',
-      role: 'assistant',
-      content: `Good morning! I'm your Fleet OS copilot powered by AtlasCloud Dots-3 and AgentMail. I am actively monitoring **${activeInbox}**. You can ask me to summarize fleet requests, identify action items, or draft a response.`,
-      timestamp: new Date().toISOString(),
-      chips: ['Summarize Fleet Inbox', 'Draft Fleet Response', 'Check Urgent Requests']
-    }
-  ]);
-  const [isChatLoading, setIsChatLoading] = useState<boolean>(false);
+type Vehicle = {
+  id: string;
+  unit: string;
+  make: string;
+  model: string;
+  year: number;
+  vin: string;
+  miles: string;
+  status: Status;
+  location: string;
+  nextService: string;
+  customer: string;
+  initials: string;
+  color: string;
+};
 
-  // Fetch status
-  const fetchStatus = async () => {
-    try {
-      const res = await fetch('/api/status');
-      if (res.ok) {
-        const data = await res.json();
-        setStatus(data);
-        if (data.defaultInbox || data.activeInbox) {
-          const inboxName = data.activeInbox || data.defaultInbox;
-          setActiveInbox(inboxName);
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to fetch status:', e);
-    }
-  };
+type WorkOrder = {
+  id: string;
+  title: string;
+  vehicle: string;
+  unit: string;
+  customer: string;
+  status: Status;
+  priority: 'Critical' | 'High' | 'Normal';
+  technician: string;
+  due: string;
+  estimate: string;
+  location: string;
+};
 
-  // Fetch emails from proxy
-  const fetchEmails = useCallback(async (isInitial = false) => {
-    setIsRefreshing(true);
-    try {
-      const res = await fetch(`/api/agentmail/messages?inbox=${encodeURIComponent(activeInbox)}`);
-      if (res.ok) {
-        const data = await res.json();
-        const incomingList: EmailMessage[] = data.messages || [];
+const vehicles: Vehicle[] = [
+  { id: 'v-101', unit: 'TRK-104', make: 'Freightliner', model: 'Cascadia 126', year: 2022, vin: '1FUJHHDR7NLNF4821', miles: '184,220 mi', status: 'Due soon', location: 'Dallas yard', nextService: 'Sep 05, 2026', customer: 'Redwood Logistics', initials: 'RL', color: 'bg-blue-100 text-blue-700' },
+  { id: 'v-102', unit: 'VAN-028', make: 'Ford', model: 'Transit 250', year: 2024, vin: '1FTBR1C84RKA90122', miles: '42,881 mi', status: 'In service', location: 'Austin route 7', nextService: 'Oct 18, 2026', customer: 'Northstar Foods', initials: 'NF', color: 'bg-emerald-100 text-emerald-700' },
+  { id: 'v-103', unit: 'TRK-091', make: 'Peterbilt', model: '579', year: 2021, vin: '1NPALB0X4MD684203', miles: '263,108 mi', status: 'Out of service', location: 'Bay 03 · Dallas', nextService: 'Today', customer: 'Redwood Logistics', initials: 'RL', color: 'bg-blue-100 text-blue-700' },
+  { id: 'v-104', unit: 'VAN-114', make: 'Mercedes-Benz', model: 'Sprinter 2500', year: 2023, vin: 'W1Y8EDHY2PT104821', miles: '67,402 mi', status: 'In service', location: 'Houston route 2', nextService: 'Nov 02, 2026', customer: 'Evergreen Services', initials: 'ES', color: 'bg-violet-100 text-violet-700' },
+  { id: 'v-105', unit: 'TRK-118', make: 'International', model: 'LT625', year: 2020, vin: '3HSDZAPR9LN742190', miles: '312,064 mi', status: 'Overdue', location: 'Tulsa depot', nextService: 'Aug 29, 2026', customer: 'Atlas Building Supply', initials: 'AB', color: 'bg-amber-100 text-amber-700' },
+  { id: 'v-106', unit: 'VAN-073', make: 'Ram', model: 'ProMaster 2500', year: 2022, vin: '3C6LRVDG9NE512440', miles: '88,610 mi', status: 'In service', location: 'Plano route 9', nextService: 'Sep 21, 2026', customer: 'Northstar Foods', initials: 'NF', color: 'bg-emerald-100 text-emerald-700' },
+];
 
-        // Check for new emails arriving while watching
-        if (!isInitial && knownEmailIdsRef.current.size > 0) {
-          const freshNewEmails = incomingList.filter(
-            e => !knownEmailIdsRef.current.has(e.id) && e.from !== activeInbox
-          );
-          if (freshNewEmails.length > 0) {
-            setNewIncomingNotification(freshNewEmails[0]);
-          }
-        }
+const workOrders: WorkOrder[] = [
+  { id: 'WO-2481', title: 'Brake system inspection', vehicle: 'Freightliner Cascadia 126', unit: 'TRK-104', customer: 'Redwood Logistics', status: 'Pending approval', priority: 'High', technician: 'Marco Ruiz', due: 'Today · 2:30 PM', estimate: '$1,284.00', location: 'Dallas yard' },
+  { id: 'WO-2477', title: 'Preventive maintenance · 100K', vehicle: 'Ford Transit 250', unit: 'VAN-028', customer: 'Northstar Foods', status: 'Scheduled', priority: 'Normal', technician: 'Jamal Webb', due: 'Sep 02 · 9:00 AM', estimate: '$642.50', location: 'Austin route 7' },
+  { id: 'WO-2472', title: 'Alternator replacement', vehicle: 'Peterbilt 579', unit: 'TRK-091', customer: 'Redwood Logistics', status: 'In progress', priority: 'Critical', technician: 'Priya Shah', due: 'Today · 4:00 PM', estimate: '$2,916.40', location: 'Bay 03 · Dallas' },
+  { id: 'WO-2464', title: 'Tire rotation & inspection', vehicle: 'Mercedes-Benz Sprinter 2500', unit: 'VAN-114', customer: 'Evergreen Services', status: 'Ready to invoice', priority: 'Normal', technician: 'Marco Ruiz', due: 'Aug 29 · 11:30 AM', estimate: '$388.00', location: 'Houston route 2' },
+  { id: 'WO-2458', title: 'Coolant leak diagnosis', vehicle: 'International LT625', unit: 'TRK-118', customer: 'Atlas Building Supply', status: 'Overdue', priority: 'High', technician: 'Unassigned', due: 'Aug 29 · 8:00 AM', estimate: '$495.00', location: 'Tulsa depot' },
+];
 
-        incomingList.forEach(e => knownEmailIdsRef.current.add(e.id));
-        setEmails(incomingList);
+const technicians = [
+  { name: 'Marco Ruiz', role: 'Lead technician', initials: 'MR', status: 'On job', jobs: '3 active', color: 'bg-blue-100 text-blue-700', skill: 'Diesel · Brakes' },
+  { name: 'Priya Shah', role: 'Senior technician', initials: 'PS', status: 'On job', jobs: '2 active', color: 'bg-violet-100 text-violet-700', skill: 'Electrical · HVAC' },
+  { name: 'Jamal Webb', role: 'Mobile technician', initials: 'JW', status: 'Available', jobs: '1 scheduled', color: 'bg-emerald-100 text-emerald-700', skill: 'PM service · Tires' },
+  { name: 'Sofia Bennett', role: 'Service advisor', initials: 'SB', status: 'In office', jobs: '8 open', color: 'bg-amber-100 text-amber-700', skill: 'Authorizations' },
+];
 
-        if ((isInitial || !selectedEmailId) && incomingList.length > 0) {
-          setSelectedEmailId(incomingList[0].id);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to fetch emails:', err);
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [activeInbox, selectedEmailId]);
+const navGroups = [
+  { label: 'Workspace', items: [{ id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }, { id: 'work-orders', label: 'Work orders', icon: ClipboardList }, { id: 'schedule', label: 'Schedule', icon: CalendarDays }, { id: 'dispatch', label: 'Dispatch board', icon: MapPin }] },
+  { label: 'Fleet', items: [{ id: 'vehicles', label: 'Vehicles', icon: Truck }, { id: 'maintenance', label: 'Maintenance', icon: Wrench }, { id: 'parts', label: 'Parts & inventory', icon: Package }] },
+  { label: 'Business', items: [{ id: 'customers', label: 'Customers & locations', icon: Users }, { id: 'financials', label: 'Estimates & invoices', icon: CreditCard }, { id: 'documents', label: 'Documents', icon: FileText }] },
+];
 
-  // Initial load and live polling interval
-  useEffect(() => {
-    fetchStatus();
-    fetchContacts();
-  }, []);
+const statusStyles: Record<string, string> = {
+  'In service': 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  Available: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  Scheduled: 'bg-blue-50 text-blue-700 ring-blue-200',
+  'In progress': 'bg-violet-50 text-violet-700 ring-violet-200',
+  'Ready to invoice': 'bg-cyan-50 text-cyan-700 ring-cyan-200',
+  Paid: 'bg-slate-100 text-slate-600 ring-slate-200',
+  'Due soon': 'bg-amber-50 text-amber-700 ring-amber-200',
+  Overdue: 'bg-rose-50 text-rose-700 ring-rose-200',
+  'Out of service': 'bg-rose-50 text-rose-700 ring-rose-200',
+  'Pending approval': 'bg-orange-50 text-orange-700 ring-orange-200',
+  'Low stock': 'bg-rose-50 text-rose-700 ring-rose-200',
+};
 
-  const fetchContacts = async () => {
-    try {
-      const res = await fetch('/api/contacts');
-      if (res.ok) {
-        const data = await res.json();
-        setContacts(data.contacts || []);
-      }
-    } catch (e) {
-      console.warn('Failed to fetch contacts:', e);
-    }
-  };
-
-  const handleAddContact = async (payload: Partial<Contact>): Promise<boolean> => {
-    try {
-      const res = await fetch('/api/contacts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) {
-        await fetchContacts();
-        return true;
-      }
-      return false;
-    } catch (e) {
-      console.error('Failed to add contact:', e);
-      return false;
-    }
-  };
-
-  const handleUpdateContact = async (id: string, payload: Partial<Contact>): Promise<boolean> => {
-    try {
-      const res = await fetch(`/api/contacts/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) {
-        await fetchContacts();
-        return true;
-      }
-      return false;
-    } catch (e) {
-      console.error('Failed to update contact:', e);
-      return false;
-    }
-  };
-
-  const handleDeleteContact = async (id: string): Promise<boolean> => {
-    try {
-      const res = await fetch(`/api/contacts/${id}`, {
-        method: 'DELETE'
-      });
-      if (res.ok) {
-        await fetchContacts();
-        return true;
-      }
-      return false;
-    } catch (e) {
-      console.error('Failed to delete contact:', e);
-      return false;
-    }
-  };
-
-  const handleExtractFromInbox = async (): Promise<number> => {
-    try {
-      const res = await fetch('/api/contacts/extract-from-inbox', {
-        method: 'POST'
-      });
-      if (res.ok) {
-        const data = await res.json();
-        await fetchContacts();
-        return data.addedCount || 0;
-      }
-      return 0;
-    } catch (e) {
-      console.error('Failed to extract contacts:', e);
-      return 0;
-    }
-  };
-
-  const handleComposeToContact = (email: string, name?: string) => {
-    setComposeInitialData({
-      to: email,
-      subject: name ? `Connecting with ${name}` : '',
-      body: ''
-    });
-    setIsComposeOpen(true);
-  };
-
-  const handleAskAIAboutContact = (contact: Contact) => {
-    setCurrentTab('chat');
-    handleSendChatMessage(
-      `Draft a professional outreach and relationship update for ${contact.name} (${contact.email}) at ${contact.company || 'their organization'}${contact.role ? `, who serves as ${contact.role}` : ''}. Notes: "${contact.notes || 'Discuss recent project milestones and strategic alignment'}"`
-    );
-  };
-
-  useEffect(() => {
-    fetchEmails(true);
-
-    // Live inbox polling every 10 seconds for AgentMail
-    const interval = setInterval(() => {
-      fetchEmails(false);
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, [activeInbox, fetchEmails]);
-
-  // Send Email Handler
-  const handleSendEmail = async (payload: SendEmailPayload): Promise<boolean> => {
-    try {
-      const res = await fetch('/api/agentmail/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (res.ok) {
-        await fetchEmails(false);
-        return true;
-      }
-      return false;
-    } catch (e) {
-      console.error('Failed to send email:', e);
-      return false;
-    }
-  };
-
-  // Send Reply from Detail Pane
-  const handleSendReply = async (replyText: string, to: string, subject: string): Promise<boolean> => {
-    return await handleSendEmail({
-      inbox: activeInbox,
-      to,
-      subject,
-      body: replyText
-    });
-  };
-
-  const handleUpdateEmailSummary = (emailId: string, summary: any) => {
-    setEmails(prev => prev.map(e => e.id === emailId ? { ...e, summary } : e));
-  };
-
-  // Send message to AI Chat
-  const handleSendChatMessage = async (text: string) => {
-    const userMsg: ChatMessage = {
-      id: `user_${Date.now()}`,
-      role: 'user',
-      content: text,
-      timestamp: new Date().toISOString()
-    };
-
-    const newMessages = [...chatMessages, userMsg];
-    setChatMessages(newMessages);
-    setIsChatLoading(true);
-
-    const selectedEmail = emails.find(e => e.id === selectedEmailId) || null;
-
-    try {
-      const apiMessages = newMessages.map(m => ({
-        role: m.role,
-        content: m.content
-      }));
-
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: apiMessages,
-          contextInbox: activeInbox,
-          activeEmail: selectedEmail,
-          personality: settings.personalityFocus
-        })
-      });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Failed to get AI response');
-      }
-
-      const data = await res.json();
-
-      const assistantMsg: ChatMessage = {
-        id: `ai_${Date.now()}`,
-        role: 'assistant',
-        content: data.content,
-        timestamp: new Date().toISOString(),
-        emailDraft: data.emailDraft
-      };
-
-      setChatMessages(prev => [...prev, assistantMsg]);
-    } catch (err: any) {
-      const errorMsg: ChatMessage = {
-        id: `err_${Date.now()}`,
-        role: 'assistant',
-        content: `I've analyzed your request: "${text}".\n\nI can draft that response, summarize specific threads, or refine the calendar invitation for your team.`,
-        timestamp: new Date().toISOString(),
-        emailDraft: {
-          to: 'sarah.j@company.com',
-          subject: 'Re: Q3 Strategy Alignment Meeting & OKRs',
-          body: `Hi Sarah,\n\nI have reviewed the feedback. We will refine Key Result 2 with explicit latency metrics and submit the updated OKRs by tomorrow EOD.\n\nBest regards,\nAlex`
-        }
-      };
-      setChatMessages(prev => [...prev, errorMsg]);
-    } finally {
-      setIsChatLoading(false);
-    }
-  };
-
-  // Send & Schedule Draft from AI Chat Card
-  const handleSendAndScheduleDraft = async (draft: { to: string; subject: string; body: string }) => {
-    const success = await handleSendEmail({
-      inbox: activeInbox,
-      to: draft.to,
-      subject: draft.subject,
-      body: draft.body
-    });
-
-    if (success) {
-      const confirmMsg: ChatMessage = {
-        id: `conf_${Date.now()}`,
-        role: 'assistant',
-        content: `✅ Email dispatched to **${draft.to}** and calendar sync scheduled for tomorrow at 10:00 AM.`,
-        timestamp: new Date().toISOString()
-      };
-      setChatMessages(prev => [...prev, confirmMsg]);
-    }
-  };
-
-  // Ask AI about email (jumps to chat)
-  const handleAskAIAboutEmail = (email: EmailMessage) => {
-    setCurrentTab('chat');
-    handleSendChatMessage(`Analyze this email from ${email.fromName || email.from} with subject "${email.subject}" and prepare response action items.`);
-  };
-
-  // Filtered emails based on search and current tab
-  const displayedEmails = emails.filter((email) => {
-    // Search query filter
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const fromStr = (email.fromName || email.from || '').toLowerCase();
-      const subjStr = (email.subject || '').toLowerCase();
-      const bodyStr = (email.text || '').toLowerCase();
-      if (!fromStr.includes(q) && !subjStr.includes(q) && !bodyStr.includes(q)) {
-        return false;
-      }
-    }
-
-    const isSent = (email.from && email.from.toLowerCase().includes(activeInbox.toLowerCase())) ||
-                   email.labels?.includes('sent') ||
-                   email.id.startsWith('msg_sent_');
-
-    if (currentTab === 'sent') return isSent;
-    if (currentTab === 'drafts') return email.labels?.includes('draft');
-    return !isSent;
-  });
-
-  const selectedEmail = emails.find((e) => e.id === selectedEmailId) || displayedEmails[0] || null;
-
-  const inboxCount = emails.filter((e) => {
-    const isSent = (e.from && e.from.toLowerCase().includes(activeInbox.toLowerCase())) ||
-                   e.labels?.includes('sent') ||
-                   e.id.startsWith('msg_sent_');
-    return !isSent && !e.read;
-  }).length;
-
-  const sentCount = emails.filter((e) => {
-    return (e.from && e.from.toLowerCase().includes(activeInbox.toLowerCase())) ||
-           e.labels?.includes('sent') ||
-           e.id.startsWith('msg_sent_');
-  }).length;
-  const draftsCount = 0;
-
-  return (
-    <div className="h-screen w-screen flex bg-white text-slate-900 overflow-hidden font-sans select-none antialiased">
-      {/* Left Navigation Sidebar */}
-      <Sidebar
-        currentTab={currentTab}
-        onSelectTab={(tab) => setCurrentTab(tab)}
-        inboxCount={inboxCount}
-        sentCount={sentCount}
-        draftsCount={draftsCount}
-        contactsCount={contacts.length}
-        onOpenCompose={() => {
-          setComposeInitialData({});
-          setIsComposeOpen(true);
-        }}
-        userEmail={activeInbox}
-        userName="Alex Carter"
-        userAvatar="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"
-      />
-
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden bg-white">
-        {/* Top Header */}
-        <Header
-          searchQuery={searchQuery}
-          onSearchChange={(q) => setSearchQuery(q)}
-          unreadNotificationsCount={inboxCount}
-          onOpenHelp={() => setIsHelpConfigOpen(true)}
-          onOpenSettings={() => setCurrentTab('settings')}
-          pageTitle={currentTab === 'contacts' ? 'Contacts' : currentTab === 'settings' ? 'Settings' : undefined}
-          userAvatar="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"
-        />
-
-        {/* View Switcher */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* 1. Inbox / Sent / Drafts View (2-Column Split) */}
-          {(currentTab === 'inbox' || currentTab === 'sent' || currentTab === 'drafts') && (
-            <div className="flex-1 flex w-full h-full overflow-hidden">
-              <EmailList
-                emails={displayedEmails}
-                selectedEmailId={selectedEmailId}
-                onSelectEmail={(email) => {
-                  setSelectedEmailId(email.id);
-                  setEmails(prev => prev.map(e => e.id === email.id ? { ...e, read: true } : e));
-                }}
-                folderTitle={currentTab === 'inbox' ? 'Inbox' : currentTab === 'sent' ? 'Sent' : 'Drafts'}
-                onRefresh={() => fetchEmails(false)}
-                isRefreshing={isRefreshing}
-                activeInbox={activeInbox}
-              />
-
-              <EmailDetail
-                email={selectedEmail}
-                onSendReply={handleSendReply}
-                onAskAIAboutEmail={handleAskAIAboutEmail}
-                onUpdateEmailSummary={handleUpdateEmailSummary}
-                userAvatar="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"
-              />
-            </div>
-          )}
-
-          {/* 2. Contacts & Address Book View */}
-          {currentTab === 'contacts' && (
-            <ContactsView
-              contacts={contacts}
-              emails={emails}
-              onAddContact={handleAddContact}
-              onUpdateContact={handleUpdateContact}
-              onDeleteContact={handleDeleteContact}
-              onExtractFromInbox={handleExtractFromInbox}
-              onComposeTo={handleComposeToContact}
-              onAskAIAboutContact={handleAskAIAboutContact}
-            />
-          )}
-
-          {/* 3. AI Chat View */}
-          {currentTab === 'chat' && (
-            <AIChatView
-              messages={chatMessages}
-              onSendMessage={handleSendChatMessage}
-              isLoading={isChatLoading}
-              onSendAndScheduleDraft={handleSendAndScheduleDraft}
-              userAvatar="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"
-            />
-          )}
-
-          {/* 4. Settings View */}
-          {currentTab === 'settings' && (
-            <SettingsView
-              settings={settings}
-              onSaveSettings={(newSettings) => setSettings(newSettings)}
-              onCancel={() => setCurrentTab('inbox')}
-            />
-          )}
-
-          {(['vehicles', 'work-orders', 'maintenance', 'schedule', 'dispatch', 'parts', 'customers', 'financials', 'documents'] as FleetModuleId[]).includes(currentTab as FleetModuleId) && (
-            <FleetModuleView module={currentTab as FleetModuleId} onOpenInbox={() => setCurrentTab('inbox')} />
-          )}
-        </div>
-      </div>
-
-      {/* Compose Email Modal */}
-      <ComposeModal
-        isOpen={isComposeOpen}
-        onClose={() => setIsComposeOpen(false)}
-        onSendEmail={handleSendEmail}
-        initialTo={composeInitialData.to}
-        initialSubject={composeInitialData.subject}
-        initialBody={composeInitialData.body}
-        activeInbox={activeInbox}
-        contacts={contacts}
-      />
-
-      {/* Help / System Config Info Modal */}
-      <ConfigModal
-        isOpen={isHelpConfigOpen}
-        onClose={() => setIsHelpConfigOpen(false)}
-        status={status}
-      />
-
-      {/* Notification Toast for Live Incoming Messages */}
-      <NotificationToast
-        incomingEmail={newIncomingNotification}
-        onView={(email) => {
-          setSelectedEmailId(email.id);
-          setNewIncomingNotification(null);
-          setCurrentTab('inbox');
-        }}
-        onDismiss={() => setNewIncomingNotification(null)}
-      />
-    </div>
-  );
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(' ');
 }
+
+function StatusPill({ status, dot = true }: { status: string; dot?: boolean }) {
+  return <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset', statusStyles[status] || 'bg-slate-100 text-slate-600 ring-slate-200')}>
+    {dot && <span className={cn('h-1.5 w-1.5 rounded-full', status === 'Out of service' || status === 'Overdue' || status === 'Low stock' ? 'bg-rose-500' : status === 'Due soon' || status === 'Pending approval' ? 'bg-amber-500' : status === 'In progress' ? 'bg-violet-500' : 'bg-emerald-500')} />}
+    {status}
+  </span>;
+}
+
+function Avatar({ initials, color = 'bg-blue-100 text-blue-700', size = 'md' }: { initials: string; color?: string; size?: 'sm' | 'md' | 'lg' }) {
+  return <span className={cn('inline-flex shrink-0 items-center justify-center rounded-full font-bold', color, size === 'sm' ? 'h-7 w-7 text-[10px]' : size === 'lg' ? 'h-12 w-12 text-sm' : 'h-9 w-9 text-xs')}>{initials}</span>;
+}
+
+function Button({ children, variant = 'primary', onClick, icon: Icon, className, type = 'button' }: { children: React.ReactNode; variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; onClick?: () => void; icon?: React.ComponentType<{ className?: string }>; className?: string; type?: 'button' | 'submit' }) {
+  return <button type={type} onClick={onClick} className={cn('inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold transition active:scale-[.98]', variant === 'primary' && 'bg-blue-600 text-white shadow-sm shadow-blue-600/20 hover:bg-blue-700', variant === 'secondary' && 'border border-slate-200 bg-white text-slate-700 shadow-sm hover:border-slate-300 hover:bg-slate-50', variant === 'ghost' && 'text-slate-500 hover:bg-slate-100 hover:text-slate-800', variant === 'danger' && 'border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100', className)}>{Icon && <Icon className="h-4 w-4" />}{children}</button>;
+}
+
+function SectionHeading({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description?: string; action?: React.ReactNode }) {
+  return <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div>
+      {eyebrow && <p className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.16em] text-blue-600">{eyebrow}</p>}
+      <h1 className="text-[25px] font-bold tracking-[-0.03em] text-slate-950">{title}</h1>
+      {description && <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500">{description}</p>}
+    </div>
+    {action && <div className="flex items-center gap-2">{action}</div>}
+  </div>;
+}
+
+function MetricCard({ label, value, note, icon: Icon, tone = 'blue', onClick }: { label: string; value: string; note: string; icon: React.ComponentType<{ className?: string }>; tone?: 'blue' | 'amber' | 'rose' | 'emerald'; onClick?: () => void }) {
+  const tones = { blue: 'bg-blue-50 text-blue-600', amber: 'bg-amber-50 text-amber-600', rose: 'bg-rose-50 text-rose-600', emerald: 'bg-emerald-50 text-emerald-600' };
+  return <button onClick={onClick} className="group rounded-xl border border-slate-200 bg-white p-4 text-left shadow-[0_1px_2px_rgba(15,23,42,.04)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
+    <div className="flex items-start justify-between"><span className={cn('flex h-9 w-9 items-center justify-center rounded-lg', tones[tone])}><Icon className="h-4 w-4" /></span><ArrowRight className="h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-500" /></div>
+    <p className="mt-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">{label}</p>
+    <p className="mt-1 text-2xl font-bold tracking-[-0.03em] text-slate-950">{value}</p>
+    <p className="mt-1.5 text-xs text-slate-500">{note}</p>
+  </button>;
+}
+
+function SearchField({ value, onChange, placeholder = 'Search fleet records' }: { value: string; onChange: (value: string) => void; placeholder?: string }) {
+  return <label className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-400 shadow-sm focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100">
+    <Search className="h-4 w-4 shrink-0" /><input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-slate-400" />
+    {value && <button type="button" onClick={() => onChange('')}><X className="h-4 w-4 hover:text-slate-700" /></button>}
+  </label>;
+}
+
+function FilterBar({ search, setSearch, filter, setFilter, filters, selectedCount = 0, bulkLabel = 'Assign', onBulk }: { search: string; setSearch: (v: string) => void; filter: string; setFilter: (v: string) => void; filters: string[]; selectedCount?: number; bulkLabel?: string; onBulk?: () => void }) {
+  return <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/70 p-3 sm:flex-row sm:items-center">
+    <SearchField value={search} onChange={setSearch} />
+    <div className="flex items-center gap-2 overflow-x-auto"><div className="flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">{filters.map(item => <button key={item} onClick={() => setFilter(item)} className={cn('whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold transition', filter === item ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100')}>{item}</button>)}</div><Button variant="secondary" icon={SlidersHorizontal}>Filter</Button>{selectedCount > 0 && <Button variant="primary" onClick={onBulk} icon={Zap}>{bulkLabel} {selectedCount}</Button>}</div>
+  </div>;
+}
+
+function EmptyState({ title, description, icon: Icon = Inbox, action }: { title: string; description: string; icon?: React.ComponentType<{ className?: string }>; action?: React.ReactNode }) {
+  return <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center"><span className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-500"><Icon className="h-6 w-6" /></span><h3 className="mt-4 text-sm font-bold text-slate-900">{title}</h3><p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">{description}</p>{action && <div className="mt-5">{action}</div>}</div>;
+}
+
+function LoadingRows() {
+  return <div className="space-y-3 p-5">{[1, 2, 3, 4].map(i => <div key={i} className="flex animate-pulse items-center gap-4"><div className="h-9 w-9 rounded-full bg-slate-200" /><div className="flex-1"><div className="h-3 w-40 rounded bg-slate-200" /><div className="mt-2 h-2.5 w-64 rounded bg-slate-100" /></div><div className="h-7 w-20 rounded bg-slate-100" /></div>)}</div>;
+}
+
+function ErrorState({ onRetry }: { onRetry: () => void }) {
+  return <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-5"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 text-rose-500" /><div><p className="text-sm font-bold text-rose-900">Fleet data is temporarily unavailable</p><p className="mt-1 text-sm leading-6 text-rose-800/80">This prototype state demonstrates the error treatment without attempting a live retry.</p><Button variant="danger" className="mt-3" onClick={onRetry} icon={RefreshCw}>Show populated state</Button></div></div></div>;
+}
+
+function Dashboard({ go }: { go: (page: PageId) => void }) {
+  const [mode, setMode] = useState<'populated' | 'loading' | 'empty' | 'error'>('populated');
+  if (mode === 'loading') return <PageFrame><SectionHeading eyebrow="Monday, August 31, 2026" title="Good morning, Alex" description="Your fleet is moving well. Here is what needs attention today." action={<Button variant="secondary" onClick={() => setMode('populated')} icon={RefreshCw}>Load demo data</Button>} /><div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[1, 2, 3, 4].map(i => <div key={i} className="h-36 animate-pulse rounded-xl border border-slate-200 bg-white" />)}</div><div className="mt-6"><LoadingRows /></div></PageFrame>;
+  if (mode === 'empty') return <PageFrame><SectionHeading eyebrow="Monday, August 31, 2026" title="Good morning, Alex" description="Your fleet is moving well. Here is what needs attention today." action={<Button onClick={() => setMode('populated')} icon={Plus}>Add your first vehicle</Button>} /><div className="mt-6"><EmptyState title="Your command center is ready" description="Add vehicles, work orders, and customers to see live fleet health in one place. This guided prototype starts with a clean workspace." icon={LayoutDashboard} action={<Button onClick={() => setMode('populated')}>Preview populated dashboard</Button>} /></div></PageFrame>;
+  if (mode === 'error') return <PageFrame><SectionHeading eyebrow="Monday, August 31, 2026" title="Good morning, Alex" description="Your fleet is moving well. Here is what needs attention today." action={<Button variant="secondary" onClick={() => setMode('populated')} icon={RefreshCw}>Retry</Button>} /><div className="mt-6"><ErrorState onRetry={() => setMode('populated')} /></div></PageFrame>;
+  return <PageFrame>
+    <SectionHeading eyebrow="Monday, August 31, 2026" title="Good morning, Alex" description="Your fleet is moving well. Here is what needs attention today." action={<><Button variant="secondary" onClick={() => setMode('loading')} icon={RefreshCw}>Refresh</Button><Button onClick={() => go('work-orders')} icon={Plus}>New work order</Button></>} />
+    <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Active vehicles" value="42 / 48" note="87.5% utilization · +4.2% this month" icon={Truck} onClick={() => go('vehicles')} /><MetricCard label="Needs attention" value="07" note="2 critical · 3 due this week" icon={AlertTriangle} tone="amber" onClick={() => go('maintenance')} /><MetricCard label="Open work orders" value="18" note="$24,680 in estimated work" icon={ClipboardList} tone="blue" onClick={() => go('work-orders')} /><MetricCard label="Month to date" value="$86.4k" note="Invoiced · 12.8% above target" icon={BarChart3} tone="emerald" onClick={() => go('financials')} /></div>
+    <div className="mt-6 grid gap-5 xl:grid-cols-[1.4fr_1fr]">
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><h2 className="text-sm font-bold text-slate-900">Attention queue</h2><p className="mt-0.5 text-xs text-slate-500">Requests that need a decision before the next shift.</p></div><button onClick={() => go('work-orders')} className="text-xs font-bold text-blue-600 hover:text-blue-700">View all <ChevronRight className="inline h-3.5 w-3.5" /></button></div><div className="divide-y divide-slate-100">{workOrders.slice(0, 4).map(order => <button key={order.id} onClick={() => go(order.id === 'WO-2481' ? 'inspection' : 'work-orders')} className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition hover:bg-slate-50"><span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', order.priority === 'Critical' ? 'bg-rose-50 text-rose-600' : order.status === 'Pending approval' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600')}><ClipboardCheck className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="flex items-center gap-2"><span className="truncate text-sm font-semibold text-slate-800">{order.title}</span><span className="text-[10px] font-bold text-slate-400">{order.id}</span></span><span className="mt-1 block truncate text-xs text-slate-500">{order.unit} · {order.customer} · {order.due}</span></span><StatusPill status={order.status} /></button>)}</div></section>
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><h2 className="text-sm font-bold text-slate-900">Today in the field</h2><p className="mt-0.5 text-xs text-slate-500">Service windows across 3 locations.</p></div><button onClick={() => go('schedule')} className="text-xs font-bold text-blue-600 hover:text-blue-700">Open calendar <ChevronRight className="inline h-3.5 w-3.5" /></button></div><div className="space-y-1 p-3">{['08:00', '09:30', '11:30', '14:00'].map((time, index) => <button key={time} onClick={() => go('dispatch')} className="flex w-full items-center gap-3 rounded-lg p-2.5 text-left hover:bg-slate-50"><span className="w-11 text-xs font-bold text-slate-400">{time}</span><span className={cn('h-10 w-1 rounded-full', index === 2 ? 'bg-amber-400' : 'bg-blue-500')} /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-800">{['PM service · VAN-028', 'Brake inspection · TRK-104', 'Tire rotation · VAN-114', 'Alternator replacement · TRK-091'][index]}</span><span className="mt-0.5 block truncate text-xs text-slate-500">{['Jamal Webb · Northstar Foods', 'Marco Ruiz · Redwood Logistics', 'Marco Ruiz · Evergreen Services', 'Priya Shah · Bay 03 · Dallas'][index]}</span></span><ChevronRight className="h-4 w-4 text-slate-300" /></button>)}</div></section>
+    </div>
+    <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_1fr_1.1fr]">
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><h2 className="text-sm font-bold text-slate-900">Fleet health</h2><button onClick={() => go('vehicles')} className="text-xs font-semibold text-blue-600">Details</button></div><div className="mt-4 flex items-center gap-5"><div className="relative h-24 w-24 rounded-full" style={{ background: 'conic-gradient(#2563eb 0 82%, #f59e0b 82% 92%, #e2e8f0 92% 100%)' }}><div className="absolute inset-2 flex flex-col items-center justify-center rounded-full bg-white"><span className="text-xl font-bold text-slate-950">82%</span><span className="text-[10px] text-slate-400">healthy</span></div></div><div className="space-y-2 text-xs"><div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-blue-600" /> In service <strong className="ml-auto pl-6 text-slate-900">39</strong></div><div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-amber-400" /> Due soon <strong className="ml-auto pl-6 text-slate-900">05</strong></div><div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-slate-300" /> Out of service <strong className="ml-auto pl-6 text-slate-900">04</strong></div></div></div></section>
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><h2 className="text-sm font-bold text-slate-900">Team coverage</h2><button onClick={() => go('team')} className="text-xs font-semibold text-blue-600">Manage team</button></div><div className="mt-4 flex -space-x-2">{technicians.map(t => <Avatar key={t.initials} initials={t.initials} color={t.color} />)}<span className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-slate-100 text-[10px] font-bold text-slate-500">+7</span></div><div className="mt-4 flex items-center justify-between text-xs"><span className="text-slate-500">12 technicians</span><span className="font-semibold text-emerald-600">9 available today</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full w-3/4 rounded-full bg-emerald-500" /></div></section>
+      <section className="rounded-xl border border-blue-200 bg-blue-50/60 p-5 shadow-sm"><div className="flex items-center gap-2 text-blue-700"><Sparkles className="h-4 w-4" /><span className="text-[11px] font-bold uppercase tracking-[0.12em]">AgentMail signal</span></div><h2 className="mt-3 text-sm font-bold text-slate-900">3 fleet requests need triage</h2><p className="mt-1.5 text-xs leading-5 text-slate-600">Messages from Redwood Logistics and Atlas Building Supply are ready to convert into work orders.</p><Button className="mt-4" onClick={() => go('work-orders')} icon={Inbox}>Review inbox</Button></section>
+    </div>
+    <PrototypeStates onMode={setMode} />
+  </PageFrame>;
+}
+
+function PrototypeStates({ onMode }: { onMode: (mode: 'populated' | 'loading' | 'empty' | 'error') => void }) {
+  return <div className="mt-8 flex flex-wrap items-center gap-2 border-t border-dashed border-slate-200 pt-4"><span className="mr-1 text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Preview states</span><button onClick={() => onMode('populated')} className="rounded-md bg-slate-100 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600">Populated</button><button onClick={() => onMode('loading')} className="rounded-md bg-slate-100 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600">Loading</button><button onClick={() => onMode('empty')} className="rounded-md bg-slate-100 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600">Empty</button><button onClick={() => onMode('error')} className="rounded-md bg-slate-100 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600">Error</button></div>;
+}
+
+function PageFrame({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <main className={cn('min-w-0 flex-1 overflow-y-auto bg-[#f7f9fc] p-4 sm:p-6 lg:p-8', className)}><div className="mx-auto max-w-[1440px]">{children}</div></main>;
+}
+
+function VehiclesPage({ go, openVehicle }: { go: (page: PageId) => void; openVehicle: (vehicle: Vehicle) => void }) {
+  const [search, setSearch] = useState(''); const [filter, setFilter] = useState('All vehicles'); const [selected, setSelected] = useState<string[]>([]); const [state, setState] = useState<'populated' | 'empty' | 'error'>('populated');
+  const list = useMemo(() => vehicles.filter(v => (filter === 'All vehicles' || v.status === filter) && `${v.unit} ${v.make} ${v.model} ${v.customer}`.toLowerCase().includes(search.toLowerCase())), [filter, search]);
+  return <PageFrame><SectionHeading eyebrow="Fleet registry · 48 total" title="Vehicles" description="A clear operating picture of every unit, its assignment, and the next service event." action={<><Button variant="secondary" onClick={() => setState('error')} icon={Download}>Export</Button><Button onClick={() => setState('populated')} icon={Plus}>Add vehicle</Button></>} /><div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Total vehicles" value="48" note="6 types · 3 customer accounts" icon={Truck} /><MetricCard label="In service" value="39" note="81% of registered fleet" icon={CheckCircle2} tone="emerald" /><MetricCard label="Due this week" value="05" note="2 require approval" icon={Clock3} tone="amber" /><MetricCard label="Out of service" value="04" note="1 critical repair" icon={AlertTriangle} tone="rose" /></div><section className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4"><div><h2 className="text-sm font-bold text-slate-900">Fleet registry</h2><p className="mt-0.5 text-xs text-slate-500">Showing {list.length} of 48 vehicles</p></div><div className="flex items-center gap-2 text-xs text-slate-500"><button className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 font-semibold hover:bg-slate-50"><SlidersHorizontal className="h-3.5 w-3.5" /> Columns</button><button className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 font-semibold hover:bg-slate-50"><MoreHorizontal className="h-3.5 w-3.5" /> More</button></div></div><FilterBar search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} filters={['All vehicles', 'In service', 'Due soon', 'Out of service']} selectedCount={selected.length} bulkLabel="Archive" onBulk={() => setSelected([])} />{state === 'error' ? <div className="p-5"><ErrorState onRetry={() => setState('populated')} /></div> : state === 'empty' || list.length === 0 ? <div className="p-5"><EmptyState icon={Truck} title="No vehicles match these filters" description="Try a different vehicle, customer, or status. You can also clear the active filters to see the full registry." action={<Button variant="secondary" onClick={() => { setSearch(''); setFilter('All vehicles'); setState('populated'); }}>Clear filters</Button>} /></div> : <div className="overflow-x-auto"><table className="w-full min-w-[850px] text-left"><thead className="border-b border-slate-200 bg-slate-50/60 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400"><tr><th className="w-10 px-5 py-3"><input type="checkbox" checked={selected.length === list.length} onChange={() => setSelected(selected.length === list.length ? [] : list.map(v => v.id))} /></th><th className="px-3 py-3">Vehicle</th><th className="px-3 py-3">Customer / location</th><th className="px-3 py-3">Odometer</th><th className="px-3 py-3">Next service</th><th className="px-3 py-3">Status</th><th className="w-14 px-3 py-3" /></tr></thead><tbody className="divide-y divide-slate-100">{list.map(vehicle => <tr key={vehicle.id} className="group hover:bg-slate-50"><td className="px-5 py-4"><input type="checkbox" checked={selected.includes(vehicle.id)} onChange={() => setSelected(selected.includes(vehicle.id) ? selected.filter(id => id !== vehicle.id) : [...selected, vehicle.id])} /></td><td className="px-3 py-4"><button onClick={() => openVehicle(vehicle)} className="flex items-center gap-3 text-left"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><Truck className="h-4 w-4" /></span><span><span className="block text-sm font-bold text-slate-900 group-hover:text-blue-700">{vehicle.unit}</span><span className="block text-xs text-slate-500">{vehicle.year} {vehicle.make} {vehicle.model}</span></span></button></td><td className="px-3 py-4"><span className="block text-sm font-medium text-slate-700">{vehicle.customer}</span><span className="mt-0.5 flex items-center gap-1 text-xs text-slate-500"><MapPin className="h-3 w-3" />{vehicle.location}</span></td><td className="px-3 py-4 text-sm font-semibold text-slate-700">{vehicle.miles}</td><td className="px-3 py-4 text-sm text-slate-600">{vehicle.nextService}</td><td className="px-3 py-4"><StatusPill status={vehicle.status} /></td><td className="px-3 py-4"><button onClick={() => openVehicle(vehicle)} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><ChevronRight className="h-4 w-4" /></button></td></tr>)}</tbody></table></div>}</section><PrototypeStates onMode={mode => setState(mode === 'loading' ? 'populated' : mode)} /></PageFrame>;
+}
+
+function VehicleDetail({ vehicle, go }: { vehicle: Vehicle; go: (page: PageId) => void }) {
+  return <PageFrame><button onClick={() => go('vehicles')} className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-blue-600"><ArrowLeft className="h-4 w-4" /> Back to vehicles</button><SectionHeading eyebrow={`${vehicle.unit} · Vehicle profile`} title={`${vehicle.year} ${vehicle.make} ${vehicle.model}`} description={`VIN ${vehicle.vin} · assigned to ${vehicle.customer}`} action={<><Button variant="secondary" icon={Copy}>Copy VIN</Button><Button icon={PenLine}>Edit vehicle</Button></>} /><div className="mt-6 grid gap-5 xl:grid-cols-[1.4fr_0.8fr]"><div className="space-y-5"><section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-center gap-3"><span className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><Truck className="h-6 w-6" /></span><div><p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Current status</p><div className="mt-1 flex items-center gap-2"><StatusPill status={vehicle.status} /><span className="text-xs text-slate-500">Updated 8 min ago</span></div></div></div><Button variant="secondary" onClick={() => go('work-orders')} icon={ClipboardList}>View work orders</Button></div><div className="mt-6 grid gap-4 border-t border-slate-100 pt-5 sm:grid-cols-3"><div><p className="text-xs text-slate-400">Odometer</p><p className="mt-1 text-lg font-bold text-slate-900">{vehicle.miles}</p></div><div><p className="text-xs text-slate-400">Next service</p><p className="mt-1 text-lg font-bold text-slate-900">{vehicle.nextService}</p></div><div><p className="text-xs text-slate-400">Home location</p><p className="mt-1 text-sm font-bold text-slate-900">{vehicle.location}</p></div></div></section><section className="rounded-xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-200 px-5 py-4"><h2 className="text-sm font-bold text-slate-900">Service history</h2><p className="mt-0.5 text-xs text-slate-500">Recent work completed on {vehicle.unit}.</p></div><div className="divide-y divide-slate-100">{[{date:'Aug 22, 2026', title:'Oil & filter replacement', amount:'$284.00', tech:'Jamal Webb', status:'Paid'},{date:'Jul 09, 2026', title:'Tire rotation & inspection', amount:'$388.00', tech:'Marco Ruiz', status:'Paid'},{date:'Jun 14, 2026', title:'100-point safety inspection', amount:'$165.00', tech:'Priya Shah', status:'Paid'}].map(item => <div key={item.date} className="flex items-center gap-3 px-5 py-4"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600"><Check className="h-4 w-4" /></span><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-slate-800">{item.title}</p><p className="mt-0.5 text-xs text-slate-500">{item.date} · {item.tech}</p></div><span className="text-sm font-bold text-slate-800">{item.amount}</span><StatusPill status={item.status} /></div>)}</div></section></div><aside className="space-y-5"><section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><h2 className="text-sm font-bold text-slate-900">Assignment</h2><button className="text-xs font-semibold text-blue-600">Edit</button></div><div className="mt-4 flex items-center gap-3"><Avatar initials={vehicle.initials} color={vehicle.color} size="lg" /><div><p className="font-bold text-slate-900">{vehicle.customer}</p><p className="mt-0.5 text-xs text-slate-500">Fleet account · 16 vehicles</p></div></div><div className="mt-4 rounded-lg bg-slate-50 p-3 text-xs"><p className="font-semibold text-slate-700">Primary location</p><p className="mt-1 flex items-center gap-1.5 text-slate-500"><MapPin className="h-3.5 w-3.5" /> {vehicle.location}</p></div></section><section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-sm font-bold text-slate-900">Vehicle documents</h2><div className="mt-3 space-y-2">{['Registration · expires Mar 2027', 'Insurance certificate · verified', 'OEM warranty · active'].map((doc, i) => <button key={doc} onClick={() => go('documents')} className="flex w-full items-center gap-2 rounded-lg p-2 text-left hover:bg-slate-50"><FileCheck2 className={cn('h-4 w-4', i === 0 ? 'text-amber-500' : 'text-emerald-500')} /><span className="flex-1 text-xs font-semibold text-slate-700">{doc}</span><ChevronRight className="h-3.5 w-3.5 text-slate-300" /></button>)}</div></section></aside></div></PageFrame>;
+}
+
+function WorkOrdersPage({ go }: { go: (page: PageId) => void }) {
+  const [search, setSearch] = useState(''); const [filter, setFilter] = useState('All'); const [selected, setSelected] = useState<string[]>([]); const [drawer, setDrawer] = useState<WorkOrder | null>(null); const [state, setState] = useState<'populated' | 'error'>('populated');
+  const list = workOrders.filter(w => (filter === 'All' || w.status === filter) && `${w.id} ${w.title} ${w.unit} ${w.customer}`.toLowerCase().includes(search.toLowerCase()));
+  return <PageFrame><SectionHeading eyebrow="Service operations · 18 open" title="Work orders" description="Move every request from intake to authorization, service, and invoice without losing the thread." action={<><Button variant="secondary" icon={Download}>Export</Button><Button onClick={() => setDrawer({ id: 'WO-2486', title: 'New fleet service request', vehicle: 'Select vehicle', unit: '—', customer: 'Select customer', status: 'Pending approval', priority: 'Normal', technician: 'Unassigned', due: 'Not scheduled', estimate: '$0.00', location: 'Select location' })} icon={Plus}>New work order</Button></>} /><div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="All open" value="18" note="4 due today" icon={ClipboardList} onClick={() => setFilter('All')} /><MetricCard label="Pending approval" value="07" note="$8,420 estimated" icon={ShieldCheck} tone="amber" onClick={() => setFilter('Pending approval')} /><MetricCard label="In progress" value="06" note="3 technicians active" icon={Activity} tone="blue" onClick={() => setFilter('In progress')} /><MetricCard label="Ready to invoice" value="05" note="$7,260 to bill" icon={CreditCard} tone="emerald" onClick={() => setFilter('Ready to invoice')} /></div><section className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-200 px-5 py-4"><h2 className="text-sm font-bold text-slate-900">Work order queue</h2><p className="mt-0.5 text-xs text-slate-500">Requests are grouped by their current operating status.</p></div><FilterBar search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} filters={['All', 'Pending approval', 'Scheduled', 'In progress', 'Ready to invoice']} selectedCount={selected.length} bulkLabel="Assign" onBulk={() => setSelected([])} />{state === 'error' ? <div className="p-5"><ErrorState onRetry={() => setState('populated')} /></div> : <div className="overflow-x-auto"><table className="w-full min-w-[930px] text-left"><thead className="border-b border-slate-200 bg-slate-50/60 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400"><tr><th className="w-10 px-5 py-3"><input type="checkbox" checked={selected.length === list.length && list.length > 0} onChange={() => setSelected(selected.length === list.length ? [] : list.map(w => w.id))} /></th><th className="px-3 py-3">Work order</th><th className="px-3 py-3">Customer</th><th className="px-3 py-3">Technician</th><th className="px-3 py-3">Due</th><th className="px-3 py-3">Estimate</th><th className="px-3 py-3">Status</th></tr></thead><tbody className="divide-y divide-slate-100">{list.map(order => <tr key={order.id} className="group hover:bg-slate-50"><td className="px-5 py-4"><input type="checkbox" checked={selected.includes(order.id)} onChange={() => setSelected(selected.includes(order.id) ? selected.filter(id => id !== order.id) : [...selected, order.id])} /></td><td className="px-3 py-4"><button onClick={() => setDrawer(order)} className="text-left"><span className="flex items-center gap-2"><span className={cn('h-2 w-2 rounded-full', order.priority === 'Critical' ? 'bg-rose-500' : order.priority === 'High' ? 'bg-amber-500' : 'bg-blue-500')} /><span className="text-sm font-bold text-slate-900 group-hover:text-blue-700">{order.title}</span></span><span className="mt-1 block text-xs font-semibold text-slate-400">{order.id} · {order.unit}</span></button></td><td className="px-3 py-4"><span className="block text-sm font-medium text-slate-700">{order.customer}</span><span className="mt-0.5 block text-xs text-slate-500">{order.location}</span></td><td className="px-3 py-4"><div className="flex items-center gap-2"><Avatar initials={order.technician === 'Unassigned' ? '?' : order.technician.split(' ').map(n => n[0]).join('')} color={order.technician === 'Unassigned' ? 'bg-slate-100 text-slate-400' : 'bg-blue-100 text-blue-700'} size="sm" /><span className="text-sm text-slate-700">{order.technician}</span></div></td><td className="px-3 py-4 text-sm text-slate-600">{order.due}</td><td className="px-3 py-4 text-sm font-bold text-slate-800">{order.estimate}</td><td className="px-3 py-4"><StatusPill status={order.status} /></td></tr>)}</tbody></table>{list.length === 0 && <div className="p-5"><EmptyState icon={ClipboardList} title="No work orders in this view" description="Try a different status or search term to find the work order you need." /></div>}</div>}</section><div className="mt-4 flex items-center justify-between text-xs text-slate-400"><span>Prototype states</span><div className="flex gap-2"><button onClick={() => setState('populated')} className="font-semibold hover:text-slate-700">Populated</button><button onClick={() => setState('error')} className="font-semibold hover:text-slate-700">Error</button></div></div>{drawer && <WorkOrderDrawer order={drawer} onClose={() => setDrawer(null)} onInspect={() => { setDrawer(null); go('inspection'); }} />}</PageFrame>;
+}
+
+function WorkOrderDrawer({ order, onClose, onInspect }: { order: WorkOrder; onClose: () => void; onInspect: () => void }) {
+  return <Drawer onClose={onClose} title={order.id} subtitle={order.title}><div className="space-y-5"><div className="flex items-center justify-between"><StatusPill status={order.status} /><span className="text-xs font-semibold text-slate-500">{order.priority} priority</span></div><div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Vehicle</p><p className="mt-1 text-sm font-bold text-slate-900">{order.unit} · {order.vehicle}</p><p className="mt-1 flex items-center gap-1 text-xs text-slate-500"><MapPin className="h-3 w-3" /> {order.location}</p></div><div><p className="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Service lifecycle</p><div className="space-y-2">{['Request received', 'Vehicle identified', 'Inspection', 'Authorization', 'Service', 'Invoice'].map((step, i) => <div key={step} className="flex items-center gap-3"><span className={cn('flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold', i < 2 ? 'bg-blue-600 text-white' : i === 2 && order.status === 'Pending approval' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-400')}>{i < 2 ? <Check className="h-3 w-3" /> : i + 1}</span><span className={cn('text-sm', i < 2 ? 'font-semibold text-slate-800' : 'text-slate-500')}>{step}</span>{i === 2 && order.status === 'Pending approval' && <span className="ml-auto text-[10px] font-bold uppercase tracking-wide text-amber-600">Next</span>}</div>)}</div></div><div className="grid grid-cols-2 gap-3 border-y border-slate-100 py-4"><div><p className="text-xs text-slate-400">Estimate</p><p className="mt-1 text-sm font-bold text-slate-900">{order.estimate}</p></div><div><p className="text-xs text-slate-400">Technician</p><p className="mt-1 text-sm font-bold text-slate-900">{order.technician}</p></div></div><div><p className="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Latest note</p><div className="rounded-lg border border-slate-200 p-3 text-sm leading-6 text-slate-600">“Front axle shows uneven pad wear. Recommend replacing pads and resurfacing rotors before next route.”<p className="mt-2 text-xs font-semibold text-slate-400">Marco Ruiz · 10:42 AM</p></div></div><div className="flex gap-2"><Button className="flex-1" onClick={onInspect} icon={ClipboardCheck}>Open inspection</Button><Button variant="secondary" icon={MessageSquare}>Message</Button></div></div></Drawer>;
+}
+
+function InspectionPage({ go }: { go: (page: PageId) => void }) {
+  const [authorized, setAuthorized] = useState(false);
+  return <PageFrame><button onClick={() => go('work-orders')} className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-blue-600"><ArrowLeft className="h-4 w-4" /> Back to work orders</button><SectionHeading eyebrow="WO-2481 · Review & authorize" title="Brake system inspection" description="TRK-104 · Freightliner Cascadia 126 · Redwood Logistics" action={<StatusPill status={authorized ? 'Scheduled' : 'Pending approval'} />} /><div className="mt-6 grid gap-5 xl:grid-cols-[1.15fr_0.85fr]"><section className="rounded-xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><h2 className="text-sm font-bold text-slate-900">Inspection findings</h2><p className="mt-0.5 text-xs text-slate-500">Completed by Marco Ruiz · Aug 31, 10:42 AM</p></div><Button variant="secondary" icon={Download}>Download PDF</Button></div><div className="divide-y divide-slate-100">{[{label:'Brake pads · front axle', value:'Replace', severity:'Critical', note:'2 mm remaining · below fleet threshold'},{label:'Rotors · front axle', value:'Resurface', severity:'Advisory', note:'Light scoring across both faces'},{label:'Brake fluid', value:'Pass', severity:'Pass', note:'Moisture content within range'},{label:'ABS sensor', value:'Pass', severity:'Pass', note:'No active fault codes'}].map(item => <div key={item.label} className="flex items-start gap-3 px-5 py-4"><span className={cn('mt-0.5 flex h-7 w-7 items-center justify-center rounded-lg', item.severity === 'Critical' ? 'bg-rose-50 text-rose-600' : item.severity === 'Advisory' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600')}>{item.severity === 'Pass' ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}</span><div className="min-w-0 flex-1"><p className="text-sm font-bold text-slate-800">{item.label}</p><p className="mt-0.5 text-xs text-slate-500">{item.note}</p></div><span className={cn('text-xs font-bold', item.severity === 'Critical' ? 'text-rose-600' : item.severity === 'Advisory' ? 'text-amber-600' : 'text-emerald-600')}>{item.value}</span></div>)}</div><div className="border-t border-slate-200 bg-slate-50/70 p-5"><p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Photos & attachments</p><div className="mt-3 grid grid-cols-3 gap-3"><div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-slate-400"><Paperclip className="h-5 w-5" /></div><div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-slate-400"><Paperclip className="h-5 w-5" /></div><button className="flex h-24 flex-col items-center justify-center rounded-lg border border-dashed border-blue-300 bg-blue-50/50 text-blue-600"><Upload className="h-5 w-5" /><span className="mt-1 text-[10px] font-bold">Add photo</span></button></div></div></section><aside className="space-y-5"><section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-blue-600" /><h2 className="text-sm font-bold text-slate-900">Authorization</h2></div><p className="mt-2 text-sm leading-6 text-slate-600">The customer will receive the recommended repair summary and estimate before service is scheduled.</p><div className="mt-4 rounded-lg border border-slate-200 p-3"><div className="flex items-center justify-between"><span className="text-xs text-slate-500">Recommended repair</span><span className="text-sm font-bold text-slate-900">$1,284.00</span></div><div className="mt-2 flex items-center justify-between"><span className="text-xs text-slate-500">Customer approval</span><span className={cn('text-xs font-bold', authorized ? 'text-emerald-600' : 'text-amber-600')}>{authorized ? 'Approved just now' : 'Waiting for approval'}</span></div></div><Button className="mt-4 w-full" onClick={() => setAuthorized(!authorized)} icon={authorized ? CheckCircle2 : Send}>{authorized ? 'Authorization recorded' : 'Send for authorization'}</Button><p className="mt-2 text-center text-[11px] text-slate-400">Prototype-only local state · no message sent</p></section><section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-sm font-bold text-slate-900">Role-aware actions</h2><div className="mt-3 space-y-2 text-xs"><div className="flex items-center justify-between"><span className="text-slate-600">Service advisor</span><span className="font-semibold text-emerald-600">Can authorize</span></div><div className="flex items-center justify-between"><span className="text-slate-600">Technician</span><span className="font-semibold text-blue-600">Can edit findings</span></div><div className="flex items-center justify-between"><span className="text-slate-600">Dispatcher</span><span className="font-semibold text-slate-400">View only</span></div></div></section></aside></div></PageFrame>;
+}
+
+function SchedulePage({ go }: { go: (page: PageId) => void }) {
+  const [view, setView] = useState<'week' | 'day'>('week');
+  const slots = [{ time:'08:00', title:'PM service · VAN-028', tech:'Jamal Webb', color:'border-blue-200 bg-blue-50 text-blue-800' }, { time:'09:30', title:'Brake inspection · TRK-104', tech:'Marco Ruiz', color:'border-amber-200 bg-amber-50 text-amber-800' }, { time:'11:30', title:'Tire rotation · VAN-114', tech:'Marco Ruiz', color:'border-emerald-200 bg-emerald-50 text-emerald-800' }, { time:'14:00', title:'Alternator replacement · TRK-091', tech:'Priya Shah', color:'border-violet-200 bg-violet-50 text-violet-800' }];
+  return <PageFrame><SectionHeading eyebrow="Service calendar · Week 36" title="Schedule" description="Appointments, service windows, and location capacity in one shared view." action={<><div className="flex rounded-lg border border-slate-200 bg-white p-0.5"><button onClick={() => setView('day')} className={cn('rounded-md px-3 py-1.5 text-xs font-semibold', view === 'day' ? 'bg-slate-900 text-white' : 'text-slate-500')}>Day</button><button onClick={() => setView('week')} className={cn('rounded-md px-3 py-1.5 text-xs font-semibold', view === 'week' ? 'bg-slate-900 text-white' : 'text-slate-500')}>Week</button></div><Button onClick={() => go('work-orders')} icon={Plus}>Book service</Button></>} /><div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"><div className="flex items-center gap-2"><button className="rounded-md p-1.5 hover:bg-slate-100"><ArrowLeft className="h-4 w-4" /></button><button className="rounded-md p-1.5 hover:bg-slate-100"><ArrowRight className="h-4 w-4" /></button><span className="ml-1 text-sm font-bold text-slate-900">Aug 31 – Sep 06, 2026</span></div><div className="flex items-center gap-3 text-xs text-slate-500"><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-500" /> Scheduled</span><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-400" /> Needs approval</span><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-violet-500" /> In progress</span></div></div><section className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="grid min-w-[780px] grid-cols-7 border-b border-slate-200 bg-slate-50/60">{['MON 31','TUE 01','WED 02','THU 03','FRI 04','SAT 05','SUN 06'].map((day, i) => <div key={day} className={cn('border-r border-slate-200 px-3 py-3 text-center text-[10px] font-bold tracking-[0.14em]', i === 0 ? 'text-blue-600' : 'text-slate-400')}><span className="block">{day}</span><span className={cn('mx-auto mt-2 flex h-7 w-7 items-center justify-center rounded-full text-sm', i === 0 ? 'bg-blue-600 font-bold text-white' : 'text-slate-700')}>{i === 0 ? '31' : i + 1}</span></div>)}</div><div className="grid min-w-[780px] grid-cols-7"><div className="min-h-[450px] border-r border-slate-200 p-2">{slots.map(slot => <button key={slot.time} onClick={() => go('dispatch')} className={cn('mb-2 w-full rounded-lg border p-2 text-left', slot.color)}><span className="block text-[10px] font-bold opacity-70">{slot.time}</span><span className="mt-1 block text-xs font-bold leading-4">{slot.title}</span><span className="mt-1 block truncate text-[10px] opacity-75">{slot.tech}</span></button>)}</div>{['Tue','Wed','Thu','Fri','Sat','Sun'].map(day => <div key={day} className="min-h-[450px] border-r border-slate-200 bg-white p-2"><div className="mt-4 border-t border-dashed border-slate-100" /><div className="mt-20 border-t border-dashed border-slate-100" /></div>)}</div></section><div className="mt-4 grid gap-4 sm:grid-cols-3"><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-semibold text-slate-400">Appointments</p><p className="mt-1 text-2xl font-bold text-slate-900">24</p><p className="mt-1 text-xs text-emerald-600">92% on schedule</p></div><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-semibold text-slate-400">Capacity used</p><p className="mt-1 text-2xl font-bold text-slate-900">68%</p><p className="mt-1 text-xs text-slate-500">9 open service windows</p></div><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-semibold text-slate-400">Awaiting approval</p><p className="mt-1 text-2xl font-bold text-slate-900">03</p><button onClick={() => go('inspection')} className="mt-1 text-xs font-semibold text-blue-600">Review queue <ArrowRight className="inline h-3 w-3" /></button></div></div></PageFrame>;
+}
+
+function DispatchPage() {
+  const columns = [{ title: 'Unassigned', tone: 'border-slate-200', orders: [workOrders[4]] }, { title: 'En route', tone: 'border-blue-200', orders: [] }, { title: 'On site', tone: 'border-violet-200', orders: [workOrders[2]] }, { title: 'Complete', tone: 'border-emerald-200', orders: [workOrders[3]] }];
+  return <PageFrame><SectionHeading eyebrow="Field operations · Live board" title="Dispatch board" description="Coordinate technicians, appointments, and service locations across the active fleet." action={<><Button variant="secondary" icon={RefreshCw}>Refresh board</Button><Button icon={Plus}>Assign job</Button></>} /><div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"><div className="flex items-center gap-2 text-sm font-semibold text-slate-700"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600"><Activity className="h-4 w-4" /></span> Live dispatch view <span className="text-xs font-normal text-slate-400">Last updated 2 min ago</span></div><div className="flex items-center gap-2"><button className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600">All locations <ChevronDown className="ml-1 inline h-3 w-3" /></button><button className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600">All technicians <ChevronDown className="ml-1 inline h-3 w-3" /></button></div></div><div className="mt-5 grid gap-4 lg:grid-cols-4">{columns.map(column => <section key={column.title} className={cn('min-h-[390px] rounded-xl border bg-slate-50/60 p-3', column.tone)}><div className="flex items-center justify-between px-1 py-1"><h2 className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{column.title}</h2><span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-slate-400">{column.orders.length}</span></div><div className="mt-3 space-y-3">{column.orders.map(order => <article key={order.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-2"><span className="text-[10px] font-bold tracking-wide text-slate-400">{order.id}</span><button className="text-slate-300 hover:text-slate-700"><MoreHorizontal className="h-4 w-4" /></button></div><h3 className="mt-2 text-sm font-bold leading-5 text-slate-900">{order.title}</h3><p className="mt-1 text-xs font-semibold text-blue-600">{order.unit}</p><div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3"><Avatar initials={order.technician === 'Unassigned' ? '?' : order.technician.split(' ').map(n => n[0]).join('')} color={order.technician === 'Unassigned' ? 'bg-slate-100 text-slate-400' : 'bg-blue-100 text-blue-700'} size="sm" /><div className="min-w-0"><p className="truncate text-xs font-semibold text-slate-700">{order.technician}</p><p className="truncate text-[10px] text-slate-400">{order.location}</p></div></div><button className="mt-3 w-full rounded-md border border-slate-200 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">{column.title === 'Complete' ? 'View summary' : column.title === 'Unassigned' ? 'Assign technician' : 'Open route'}</button></article>)}{column.orders.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 bg-white/70 px-3 py-10 text-center text-xs text-slate-400">No jobs in this lane</div>}</div></section>)}</div><section className="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><div><h2 className="text-sm font-bold text-slate-900">Technician availability</h2><p className="mt-0.5 text-xs text-slate-500">Use skill and location to make the next assignment.</p></div><Button variant="secondary" icon={Users}>View team</Button></div><div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{technicians.map(t => <div key={t.name} className="flex items-center gap-3 rounded-lg border border-slate-200 p-3"><Avatar initials={t.initials} color={t.color} size="sm" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-slate-800">{t.name}</p><p className="mt-0.5 truncate text-[10px] text-slate-500">{t.skill}</p></div><span className={cn('text-[10px] font-bold', t.status === 'Available' ? 'text-emerald-600' : 'text-blue-600')}>{t.status}</span></div>)}</div></section></PageFrame>;
+}
+
+function MaintenancePage({ go }: { go: (page: PageId) => void }) {
+  return <PageFrame><SectionHeading eyebrow="Preventive maintenance · 5 due this week" title="Maintenance" description="Stay ahead of downtime with recurring schedules, service intervals, and exception alerts." action={<><Button variant="secondary" icon={Download}>Export plan</Button><Button icon={Plus}>Create schedule</Button></>} /><div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Due today" value="02" note="TRK-091 · TRK-118" icon={AlertTriangle} tone="rose" /><MetricCard label="Due this week" value="05" note="Across 3 locations" icon={Clock3} tone="amber" /><MetricCard label="On track" value="37" note="77% of fleet" icon={CheckCircle2} tone="emerald" /><MetricCard label="Schedules" value="14" note="Next review Sep 30" icon={CalendarDays} /></div><div className="mt-6 grid gap-5 xl:grid-cols-[1.3fr_0.7fr]"><section className="rounded-xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><h2 className="text-sm font-bold text-slate-900">Maintenance exceptions</h2><p className="mt-0.5 text-xs text-slate-500">The units most likely to impact tomorrow’s routes.</p></div><button className="text-xs font-semibold text-blue-600">View all</button></div><div className="divide-y divide-slate-100">{vehicles.filter(v => v.status !== 'In service').map(v => <button key={v.id} onClick={() => go('vehicle-detail')} className="flex w-full items-center gap-3 px-5 py-4 text-left hover:bg-slate-50"><span className={cn('flex h-9 w-9 items-center justify-center rounded-lg', v.status === 'Out of service' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600')}><Wrench className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="flex items-center gap-2"><span className="text-sm font-bold text-slate-800">{v.unit}</span><StatusPill status={v.status} /></span><span className="mt-1 block text-xs text-slate-500">{v.make} {v.model} · {v.nextService} · {v.location}</span></span><ChevronRight className="h-4 w-4 text-slate-300" /></button>)}</div></section><section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><h2 className="text-sm font-bold text-slate-900">Preventive compliance</h2><Gauge className="h-4 w-4 text-blue-600" /></div><div className="mt-6 flex items-center justify-center"><div className="relative h-36 w-36 rounded-full" style={{ background: 'conic-gradient(#10b981 0 94%, #e2e8f0 94% 100%)' }}><div className="absolute inset-3 flex flex-col items-center justify-center rounded-full bg-white"><span className="text-3xl font-bold text-slate-950">94%</span><span className="text-xs text-slate-400">compliant</span></div></div></div><div className="mt-5 space-y-3 text-xs"><div className="flex justify-between"><span className="text-slate-500">Completed on time</span><strong className="text-slate-900">37 vehicles</strong></div><div className="flex justify-between"><span className="text-slate-500">Due this month</span><strong className="text-slate-900">8 vehicles</strong></div><div className="flex justify-between"><span className="text-slate-500">No schedule</span><strong className="text-amber-600">3 vehicles</strong></div></div></section></div></PageFrame>;
+}
+
+function CustomersPage({ go }: { go: (page: PageId) => void }) {
+  const customers = [{ name:'Redwood Logistics', locations:'Dallas · Fort Worth', vehicles:'16 vehicles', open:'7 open WOs', initials:'RL', color:'bg-blue-100 text-blue-700' }, { name:'Northstar Foods', locations:'Austin · San Marcos', vehicles:'12 vehicles', open:'3 open WOs', initials:'NF', color:'bg-emerald-100 text-emerald-700' }, { name:'Evergreen Services', locations:'Houston · Katy', vehicles:'8 vehicles', open:'2 open WOs', initials:'ES', color:'bg-violet-100 text-violet-700' }, { name:'Atlas Building Supply', locations:'Tulsa · Broken Arrow', vehicles:'12 vehicles', open:'6 open WOs', initials:'AB', color:'bg-amber-100 text-amber-700' }];
+  return <PageFrame><SectionHeading eyebrow="Accounts · 4 customers" title="Customers & locations" description="Keep fleet accounts, service locations, contacts, and billing context together." action={<Button icon={Plus}>Add customer</Button>} /><div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{customers.map(c => <button key={c.name} onClick={() => go('work-orders')} className="rounded-xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"><div className="flex items-start justify-between"><Avatar initials={c.initials} color={c.color} size="lg" /><MoreHorizontal className="h-4 w-4 text-slate-300" /></div><h2 className="mt-4 text-sm font-bold text-slate-900">{c.name}</h2><p className="mt-1 flex items-center gap-1 text-xs text-slate-500"><MapPin className="h-3 w-3" /> {c.locations}</p><div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-3 text-xs"><span className="font-semibold text-slate-600">{c.vehicles}</span><span className="font-semibold text-blue-600">{c.open}</span></div></button>)}</div><div className="mt-6 grid gap-5 xl:grid-cols-[1.2fr_0.8fr]"><section className="rounded-xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-200 px-5 py-4"><h2 className="text-sm font-bold text-slate-900">Locations</h2><p className="mt-0.5 text-xs text-slate-500">Service access, hours, and current workload.</p></div><div className="divide-y divide-slate-100">{['Dallas yard','Austin route 7','Houston route 2','Tulsa depot'].map((location,i) => <button key={location} onClick={() => go('dispatch')} className="flex w-full items-center gap-3 px-5 py-4 text-left hover:bg-slate-50"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><MapPin className="h-4 w-4" /></span><span className="flex-1"><span className="block text-sm font-bold text-slate-800">{location}</span><span className="mt-0.5 block text-xs text-slate-500">{['Redwood Logistics','Northstar Foods','Evergreen Services','Atlas Building Supply'][i]} · {i + 2} active jobs</span></span><span className="text-xs font-semibold text-emerald-600">Open</span><ChevronRight className="h-4 w-4 text-slate-300" /></button>)}</div></section><section className="rounded-xl border border-blue-200 bg-blue-50/60 p-5"><div className="flex items-center gap-2 text-blue-700"><MessageSquare className="h-4 w-4" /><span className="text-[11px] font-bold uppercase tracking-[0.12em]">AgentMail context</span></div><h2 className="mt-3 text-sm font-bold text-slate-900">Inbox contacts ready to connect</h2><p className="mt-2 text-sm leading-6 text-slate-600">4 contacts from recent fleet requests can be matched to existing accounts.</p><div className="mt-4 space-y-2">{['sarah@redwoodlogistics.com','mike@northstarfoods.com'].map(email => <div key={email} className="flex items-center gap-2 rounded-lg bg-white/70 p-2.5"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-blue-600"><UserRound className="h-3.5 w-3.5" /></span><span className="flex-1 text-xs font-semibold text-slate-700">{email}</span><button className="text-[10px] font-bold text-blue-600">Match</button></div>)}</div></section></div></PageFrame>;
+}
+
+function PartsPage() {
+  const parts = [{ sku:'BRK-4421', name:'Front brake pad set', fitment:'Freightliner Cascadia', stock:'12', status:'Available', bin:'A-12', cost:'$186.00' }, { sku:'ALT-1098', name:'Alternator · 160A', fitment:'Peterbilt 579', stock:'1', status:'Low stock', bin:'C-04', cost:'$742.00' }, { sku:'FLT-2204', name:'Oil filter · Fleetguard', fitment:'Universal heavy duty', stock:'38', status:'Available', bin:'B-07', cost:'$24.50' }, { sku:'TIR-7810', name:'Steer tire · 295/75R22.5', fitment:'Class 8 trucks', stock:'0', status:'Low stock', bin:'Yard', cost:'$498.00' }];
+  return <PageFrame><SectionHeading eyebrow="Operations · 286 SKUs" title="Parts & inventory" description="Know what is on the shelf, what is reserved for a job, and what needs to be reordered." action={<><Button variant="secondary" icon={Download}>Export stock</Button><Button icon={Plus}>Add part</Button></>} /><div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Inventory value" value="$184k" note="+6.2% from last month" icon={Package} /><MetricCard label="Low stock" value="12" note="3 linked to today’s jobs" icon={AlertTriangle} tone="rose" /><MetricCard label="Reserved" value="28" note="$8,420 allocated" icon={ClipboardList} tone="amber" /><MetricCard label="Open POs" value="04" note="Expected Sep 03–06" icon={Archive} tone="blue" /></div><section className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4"><div><h2 className="text-sm font-bold text-slate-900">Parts catalog</h2><p className="mt-0.5 text-xs text-slate-500">Track stock, fitment, bin, and standard cost.</p></div><div className="flex items-center gap-2"><SearchField value="" onChange={() => undefined} placeholder="Search SKU or part" /><Button variant="secondary" icon={Filter}>Filters</Button></div></div><div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left"><thead className="border-b border-slate-200 bg-slate-50/60 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400"><tr><th className="px-5 py-3">Part</th><th className="px-3 py-3">Fitment</th><th className="px-3 py-3">On hand</th><th className="px-3 py-3">Bin</th><th className="px-3 py-3">Unit cost</th><th className="px-3 py-3">Status</th><th className="px-3 py-3" /></tr></thead><tbody className="divide-y divide-slate-100">{parts.map(part => <tr key={part.sku} className="hover:bg-slate-50"><td className="px-5 py-4"><span className="block text-sm font-bold text-slate-900">{part.name}</span><span className="mt-1 block text-xs font-semibold text-slate-400">{part.sku}</span></td><td className="px-3 py-4 text-sm text-slate-600">{part.fitment}</td><td className="px-3 py-4 text-sm font-bold text-slate-800">{part.stock}</td><td className="px-3 py-4 text-sm text-slate-600">{part.bin}</td><td className="px-3 py-4 text-sm font-semibold text-slate-800">{part.cost}</td><td className="px-3 py-4"><StatusPill status={part.status} /></td><td className="px-3 py-4"><button className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100"><MoreHorizontal className="h-4 w-4" /></button></td></tr>)}</tbody></table></div></section></PageFrame>;
+}
+
+function FinancialsPage({ go }: { go: (page: PageId) => void }) {
+  const invoices = [{ id:'INV-1042', customer:'Redwood Logistics', date:'Aug 28, 2026', amount:'$8,420.00', status:'Paid' }, { id:'INV-1041', customer:'Northstar Foods', date:'Aug 27, 2026', amount:'$4,860.50', status:'Ready to invoice' }, { id:'INV-1038', customer:'Evergreen Services', date:'Aug 24, 2026', amount:'$2,140.00', status:'Paid' }, { id:'EST-872', customer:'Atlas Building Supply', date:'Aug 31, 2026', amount:'$1,284.00', status:'Pending approval' }];
+  return <PageFrame><SectionHeading eyebrow="Revenue operations · August 2026" title="Estimates & invoices" description="Keep customer approvals, service estimates, invoices, and payments connected to the job." action={<><Button variant="secondary" icon={Download}>Export report</Button><Button icon={Plus}>New estimate</Button></>} /><div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Invoiced MTD" value="$86.4k" note="+12.8% vs target" icon={CreditCard} tone="emerald" /><MetricCard label="Awaiting approval" value="$8.4k" note="3 estimates" icon={ShieldCheck} tone="amber" onClick={() => go('inspection')} /><MetricCard label="Outstanding" value="$14.7k" note="Average age 18 days" icon={Clock3} tone="rose" /><MetricCard label="Avg. repair value" value="$1,120" note="Across 77 closed jobs" icon={BarChart3} /></div><section className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><h2 className="text-sm font-bold text-slate-900">Recent billing activity</h2><p className="mt-0.5 text-xs text-slate-500">Estimates and invoices across all customer accounts.</p></div><button className="text-xs font-semibold text-blue-600">View aging report</button></div><div className="divide-y divide-slate-100">{invoices.map(item => <button key={item.id} onClick={() => item.status === 'Pending approval' && go('inspection')} className="flex w-full flex-wrap items-center gap-3 px-5 py-4 text-left hover:bg-slate-50"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600">{item.id.startsWith('EST') ? <FileText className="h-4 w-4" /> : <CreditCard className="h-4 w-4" />}</span><span className="min-w-[100px] flex-1"><span className="block text-sm font-bold text-slate-800">{item.id}</span><span className="mt-0.5 block text-xs text-slate-500">{item.customer} · {item.date}</span></span><span className="text-sm font-bold text-slate-800">{item.amount}</span><StatusPill status={item.status} /><ChevronRight className="h-4 w-4 text-slate-300" /></button>)}</div></section></PageFrame>;
+}
+
+function DocumentsPage() {
+  const docs = [{ name:'TRK-104 inspection photos', type:'Inspection', owner:'Marco Ruiz', date:'Aug 31, 2026', size:'4.8 MB', icon:Paperclip }, { name:'Redwood Logistics · authorization', type:'Authorization', owner:'Sofia Bennett', date:'Aug 31, 2026', size:'182 KB', icon:FileCheck2 }, { name:'VAN-028 service receipt', type:'Receipt', owner:'Jamal Webb', date:'Aug 22, 2026', size:'920 KB', icon:FileText }, { name:'Fleet insurance certificate', type:'Compliance', owner:'Alex Carter', date:'Aug 01, 2026', size:'1.2 MB', icon:ShieldCheck }];
+  return <PageFrame><SectionHeading eyebrow="Fleet records · 164 files" title="Documents" description="Inspections, photos, receipts, authorizations, and compliance records in one searchable archive." action={<Button icon={Upload}>Upload document</Button>} /><div className="mt-6 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm"><SearchField value="" onChange={() => undefined} placeholder="Search files, vehicles, customers" /><div className="flex rounded-lg border border-slate-200 bg-white p-0.5"><button className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">All files</button><button className="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-500">Inspections</button><button className="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-500">Compliance</button></div></div><section className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="grid grid-cols-[minmax(240px,1fr)_150px_170px_110px_40px] border-b border-slate-200 bg-slate-50/60 px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400"><span>Name</span><span>Type</span><span>Owner / date</span><span>Size</span><span /></div><div className="divide-y divide-slate-100">{docs.map(doc => <button key={doc.name} className="grid w-full grid-cols-[minmax(240px,1fr)_150px_170px_110px_40px] items-center px-5 py-4 text-left hover:bg-slate-50"><span className="flex items-center gap-3"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600"><doc.icon className="h-4 w-4" /></span><span><span className="block text-sm font-semibold text-slate-800">{doc.name}</span><span className="mt-0.5 block text-xs text-slate-400">PDF · stored in Fleet OS</span></span></span><span className="text-xs font-semibold text-slate-600">{doc.type}</span><span className="text-xs text-slate-500">{doc.owner}<br />{doc.date}</span><span className="text-xs text-slate-500">{doc.size}</span><ChevronRight className="h-4 w-4 text-slate-300" /></button>)}</div></section></PageFrame>;
+}
+
+function TeamPage() {
+  return <PageFrame><SectionHeading eyebrow="People & permissions · 12 members" title="Team & technicians" description="Make ownership clear with role-aware access, technician skills, and current availability." action={<Button icon={Plus}>Invite teammate</Button>} /><div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{technicians.map(t => <article key={t.name} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between"><Avatar initials={t.initials} color={t.color} size="lg" /><StatusPill status={t.status === 'On job' ? 'In progress' : t.status} /></div><h2 className="mt-4 text-sm font-bold text-slate-900">{t.name}</h2><p className="mt-1 text-xs text-slate-500">{t.role}</p><div className="mt-4 border-t border-slate-100 pt-3 text-xs"><div className="flex justify-between"><span className="text-slate-400">Skill set</span><span className="font-semibold text-slate-700">{t.skill}</span></div><div className="mt-2 flex justify-between"><span className="text-slate-400">Today</span><span className="font-semibold text-slate-700">{t.jobs}</span></div></div></article>)}</div><section className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-200 px-5 py-4"><h2 className="text-sm font-bold text-slate-900">Access matrix</h2><p className="mt-0.5 text-xs text-slate-500">Prototype treatment for role-aware actions across fleet workflows.</p></div><div className="overflow-x-auto"><table className="w-full min-w-[700px] text-left"><thead className="border-b border-slate-200 bg-slate-50/60 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400"><tr><th className="px-5 py-3">Role</th><th className="px-3 py-3">Fleet registry</th><th className="px-3 py-3">Work orders</th><th className="px-3 py-3">Authorization</th><th className="px-3 py-3">Billing</th></tr></thead><tbody className="divide-y divide-slate-100">{[['Fleet admin','Full access','Full access','Can authorize','Full access'],['Service advisor','View + edit','Create + edit','Can authorize','Create + edit'],['Technician','Assigned units','Update findings','View only','No access'],['Dispatcher','View only','Assign + schedule','View only','No access']].map(row => <tr key={row[0]}><td className="px-5 py-4 text-sm font-bold text-slate-800">{row[0]}</td>{row.slice(1).map((cell,i) => <td key={i} className={cn('px-3 py-4 text-xs font-semibold', cell === 'No access' ? 'text-slate-300' : cell === 'View only' ? 'text-slate-500' : 'text-emerald-600')}>{cell}</td>)}</tr>)}</tbody></table></div></section></PageFrame>;
+}
+
+function SettingsPage() {
+  const [connected, setConnected] = useState(false); const [saved, setSaved] = useState(false);
+  return <PageFrame><SectionHeading eyebrow="Workspace configuration" title="Tenant settings" description="Shape the operating rules, connected inbox, and team defaults for this Fleet OS workspace." action={<Button onClick={() => setSaved(true)} icon={saved ? Check : undefined}>{saved ? 'Changes saved locally' : 'Save changes'}</Button>} /><div className="mt-6 grid gap-5 xl:grid-cols-[1fr_0.78fr]"><div className="space-y-5"><section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2"><Settings2 className="h-4 w-4 text-blue-600" /><h2 className="text-sm font-bold text-slate-900">Workspace defaults</h2></div><div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="text-xs font-semibold text-slate-600">Workspace name<input defaultValue="Redwood Fleet Operations" className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" /></label><label className="text-xs font-semibold text-slate-600">Default timezone<select defaultValue="Central Time" className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-800 outline-none focus:border-blue-400"><option>Central Time</option><option>Mountain Time</option><option>Eastern Time</option></select></label><label className="text-xs font-semibold text-slate-600">Default currency<input defaultValue="USD · $" className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal text-slate-800 outline-none focus:border-blue-400" /></label><label className="text-xs font-semibold text-slate-600">Work order prefix<input defaultValue="WO-" className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal text-slate-800 outline-none focus:border-blue-400" /></label></div></section><section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2"><Bell className="h-4 w-4 text-blue-600" /><h2 className="text-sm font-bold text-slate-900">Operational notifications</h2></div><div className="mt-4 divide-y divide-slate-100">{['New fleet request arrives','Estimate needs customer approval','Vehicle maintenance becomes overdue','Technician changes work order status'].map((item,i) => <label key={item} className="flex items-center gap-3 py-3"><input type="checkbox" defaultChecked={i !== 3} className="h-4 w-4 rounded border-slate-300 text-blue-600" /><span className="flex-1 text-sm text-slate-700">{item}</span><span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{i % 2 ? 'Email' : 'In app'}</span></label>)}</div></section></div><aside className="space-y-5"><section className="rounded-xl border border-blue-200 bg-blue-50/60 p-5 shadow-sm"><div className="flex items-center gap-2 text-blue-700"><Sparkles className="h-4 w-4" /><span className="text-[11px] font-bold uppercase tracking-[0.12em]">AgentMail onboarding</span></div><h2 className="mt-3 text-lg font-bold tracking-[-0.02em] text-slate-950">Bring fleet requests into Fleet OS</h2><p className="mt-2 text-sm leading-6 text-slate-600">Connect a dedicated inbox for service requests, authorization replies, and customer context.</p><div className="mt-5 rounded-xl border border-blue-200 bg-white p-4"><div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 text-white"><Inbox className="h-5 w-5" /></span><div><p className="text-sm font-bold text-slate-900">fleet@redwood.agentmail.to</p><p className="mt-0.5 text-xs text-emerald-600">{connected ? 'Connected for this prototype' : 'Ready to connect'}</p></div></div><Button className="mt-4 w-full" onClick={() => setConnected(!connected)} icon={connected ? CheckCircle2 : Zap}>{connected ? 'Inbox connected' : 'Connect AgentMail inbox'}</Button><p className="mt-2 text-center text-[11px] text-slate-400">Design-only onboarding preview · no account connection</p></div><div className="mt-4 space-y-2 text-xs text-slate-600"><p className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-emerald-600" /> Route messages to the right customer</p><p className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-emerald-600" /> Extract vehicle and service details</p><p className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-emerald-600" /> Draft replies for advisor review</p></div></section><section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2"><Database className="h-4 w-4 text-slate-500" /><h2 className="text-sm font-bold text-slate-900">Data & privacy</h2></div><p className="mt-2 text-xs leading-5 text-slate-500">Prototype records are local-only. API and database contracts remain intentionally disconnected until the design pass is approved.</p><button className="mt-3 text-xs font-bold text-blue-600">Review retention policy <ArrowRight className="inline h-3 w-3" /></button></section></aside></div></PageFrame>;
+}
+
+function Drawer({ title, subtitle, onClose, children }: { title: string; subtitle?: string; onClose: () => void; children: React.ReactNode }) {
+  return <div className="fixed inset-0 z-50 flex justify-end"><button aria-label="Close drawer" onClick={onClose} className="absolute inset-0 bg-slate-950/25 backdrop-blur-[1px]" /><aside className="relative h-full w-full max-w-[460px] overflow-y-auto border-l border-slate-200 bg-white shadow-2xl"><div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur"><div><p className="text-[11px] font-bold uppercase tracking-[0.14em] text-blue-600">Detail panel</p><h2 className="mt-1 text-lg font-bold tracking-[-0.02em] text-slate-950">{title}</h2>{subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}</div><button onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-5 w-5" /></button></div><div className="p-5">{children}</div></aside></div>;
+}
+
+function App() {
+  const [page, setPage] = useState<PageId>('dashboard'); const [mobileNav, setMobileNav] = useState(false); const [selectedVehicle, setSelectedVehicle] = useState<Vehicle>(vehicles[0]); const [commandOpen, setCommandOpen] = useState(false);
+  const go = (next: PageId) => { setPage(next); setMobileNav(false); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const pageTitle: Record<PageId, string> = { dashboard:'Dashboard', vehicles:'Vehicles', 'vehicle-detail':'Vehicle detail', 'work-orders':'Work orders', inspection:'Inspection & authorization', schedule:'Schedule', dispatch:'Dispatch board', maintenance:'Maintenance', customers:'Customers & locations', parts:'Parts & inventory', financials:'Estimates & invoices', documents:'Documents', team:'Team & technicians', settings:'Tenant settings' };
+  return <div className="flex h-screen w-full overflow-hidden bg-[#f7f9fc] text-slate-900"><aside className={cn('fixed inset-y-0 left-0 z-40 flex w-[258px] shrink-0 -translate-x-full flex-col bg-[#111827] text-slate-300 transition-transform lg:static lg:translate-x-0', mobileNav && 'translate-x-0')}><div className="flex h-[72px] items-center gap-3 border-b border-white/10 px-5"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-950/30"><Truck className="h-5 w-5" /></div><div><p className="text-[15px] font-bold tracking-[-0.02em] text-white">FleetMail</p><p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Fleet OS</p></div><button onClick={() => setMobileNav(false)} className="ml-auto rounded-lg p-1.5 text-slate-400 hover:bg-white/10 lg:hidden"><X className="h-4 w-4" /></button></div><div className="px-3 pt-4"><button onClick={() => go('work-orders')} className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-950/20 transition hover:bg-blue-500"><Plus className="h-4 w-4" /> New work order</button></div><nav className="flex-1 overflow-y-auto px-3 py-5">{navGroups.map(group => <div key={group.label} className="mb-6"><p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{group.label}</p><div className="space-y-0.5">{group.items.map(item => { const Icon = item.icon; const active = page === item.id || (item.id === 'vehicles' && page === 'vehicle-detail') || (item.id === 'work-orders' && page === 'inspection'); return <button key={item.id} onClick={() => go(item.id as PageId)} className={cn('flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition', active ? 'bg-blue-600/15 text-white ring-1 ring-inset ring-blue-500/20' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200')}><Icon className={cn('h-4 w-4', active ? 'text-blue-400' : 'text-slate-500')} /><span className="flex-1">{item.label}</span>{item.id === 'work-orders' && <span className="rounded-full bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">18</span>}</button>; })}</div></div>)}<div className="mb-6"><p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Admin</p><button onClick={() => go('team')} className={cn('flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition', page === 'team' ? 'bg-blue-600/15 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200')}><Users className="h-4 w-4 text-slate-500" /> Team & technicians</button><button onClick={() => go('settings')} className={cn('mt-0.5 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition', page === 'settings' ? 'bg-blue-600/15 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200')}><Settings2 className="h-4 w-4 text-slate-500" /> Tenant settings</button></div></nav><div className="border-t border-white/10 p-3"><button className="flex w-full items-center gap-3 rounded-lg p-2 text-left hover:bg-white/5"><Avatar initials="AC" color="bg-blue-500/20 text-blue-300" size="sm" /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-bold text-white">Alex Carter</span><span className="mt-0.5 block truncate text-[10px] text-slate-500">Fleet admin · Redwood</span></span><MoreHorizontal className="h-4 w-4 text-slate-500" /></button></div></aside><div className="flex min-w-0 flex-1 flex-col"><header className="flex h-[72px] shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 sm:px-6"><button onClick={() => setMobileNav(true)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden"><Menu className="h-5 w-5" /></button><div className="min-w-0 flex-1"><p className="truncate text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Fleet OS / <span className="text-blue-600">{pageTitle[page]}</span></p><h2 className="mt-1 truncate text-sm font-bold text-slate-900">Operations command center</h2></div><button onClick={() => setCommandOpen(true)} className="hidden items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500 shadow-sm hover:bg-slate-50 md:flex"><Command className="h-3.5 w-3.5" /> Quick actions <kbd className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-400">⌘K</kbd></button><button className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100"><Bell className="h-4 w-4" /><span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-rose-500 ring-2 ring-white" /></button><button onClick={() => go('settings')} className="hidden h-9 w-9 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700 sm:flex">AC</button></header>{page === 'dashboard' && <Dashboard go={go} />}{page === 'vehicles' && <VehiclesPage go={go} openVehicle={vehicle => { setSelectedVehicle(vehicle); go('vehicle-detail'); }} />}{page === 'vehicle-detail' && <VehicleDetail vehicle={selectedVehicle} go={go} />}{page === 'work-orders' && <WorkOrdersPage go={go} />}{page === 'inspection' && <InspectionPage go={go} />}{page === 'schedule' && <SchedulePage go={go} />}{page === 'dispatch' && <DispatchPage />}{page === 'maintenance' && <MaintenancePage go={go} />}{page === 'customers' && <CustomersPage go={go} />}{page === 'parts' && <PartsPage />}{page === 'financials' && <FinancialsPage go={go} />}{page === 'documents' && <DocumentsPage />}{page === 'team' && <TeamPage />}{page === 'settings' && <SettingsPage />}</div>{commandOpen && <Drawer title="Quick actions" subtitle="Navigate prototype screens without leaving your workflow" onClose={() => setCommandOpen(false)}><div className="space-y-2">{[['dashboard','Open dashboard',LayoutDashboard],['vehicles','Find a vehicle',Truck],['work-orders','Review work orders',ClipboardList],['schedule','Book service',CalendarDays],['inspection','Review authorization',ShieldCheck],['settings','Configure AgentMail',Sparkles]].map(([id,label,Icon]) => <button key={id as string} onClick={() => { setCommandOpen(false); go(id as PageId); }} className="flex w-full items-center gap-3 rounded-lg border border-slate-200 p-3 text-left hover:border-blue-300 hover:bg-blue-50/40"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><Icon className="h-4 w-4" /></span><span className="flex-1 text-sm font-semibold text-slate-800">{label as string}</span><ChevronRight className="h-4 w-4 text-slate-300" /></button>)}</div></Drawer>}</div>;
+}
+
+export default App;
