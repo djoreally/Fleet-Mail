@@ -1,0 +1,98 @@
+export interface EmailMessage {
+  id: string;
+  thread_id?: string;
+  inbox_id?: string;
+  from: string;
+  fromName?: string;
+  avatarUrl?: string;
+  to: string[] | string;
+  subject: string;
+  text?: string;
+  html?: string;
+  created_at: string;
+  formattedTime?: string;
+  relativeTime?: string;
+  read?: boolean;
+  starred?: boolean;
+  actionRequired?: string;
+  labels?: string[];
+  summary?: EmailSummary;
+}
+
+export interface EmailSummary {
+  tldr: string;
+  actionItems: string[];
+  urgency: 'Low' | 'Medium' | 'High' | 'Critical';
+  sentiment: 'Positive' | 'Neutral' | 'Urgent' | 'Informative';
+  suggestedReplies: string[];
+  keyPoints: string[];
+  generatedAt: string;
+  modelUsed: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string;
+  chips?: string[];
+  calendarInvite?: {
+    title: string;
+    time: string;
+  };
+  emailDraft?: {
+    to: string;
+    subject: string;
+    body: string;
+  };
+  emailSummary?: EmailSummary;
+  isStreaming?: boolean;
+}
+
+export interface SystemStatus {
+  atlasCloudConfigured: boolean;
+  agentMailConfigured: boolean;
+  geminiConfigured: boolean;
+  defaultInbox: string;
+  model: string;
+  activeInbox: string;
+}
+
+export interface SendEmailPayload {
+  inbox: string;
+  to: string;
+  subject: string;
+  body: string;
+  html?: string;
+}
+
+export interface PersonalizationSettings {
+  personalityFocus: 'Professional' | 'Friendly' | 'Concise';
+  importantEmailsOnly: boolean;
+  dailyAIDigest: boolean;
+  connectedAccounts: ConnectedAccount[];
+}
+
+export interface ConnectedAccount {
+  id: string;
+  name: string;
+  type: 'google' | 'outlook' | 'agentmail' | 'custom';
+  email: string;
+  icon?: string;
+}
+
+export interface Contact {
+  id: string;
+  name: string;
+  email: string;
+  company?: string;
+  role?: string;
+  phone?: string;
+  avatarUrl?: string;
+  tags?: string[];
+  notes?: string;
+  lastContacted?: string;
+  isFavorite?: boolean;
+  source?: 'manual' | 'agentmail' | 'inbox' | 'google';
+}
+

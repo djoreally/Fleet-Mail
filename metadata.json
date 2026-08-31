@@ -1,0 +1,7 @@
+{
+  "name": "AI Mail",
+  "description": "Active Intelligence email client with AI-powered summarization, tone analysis, smart drafts, and conversational email assistant.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
