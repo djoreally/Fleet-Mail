@@ -1,4 +1,5 @@
 import { serverConfig } from '../config.js';
+import { randomUUID } from 'node:crypto';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -53,7 +54,7 @@ export class ScheduleDispatchService {
     if (endsAt <= startsAt) throw new FleetOperationsError('endsAt must be after startsAt', 400);
     const status = String(input.status || 'scheduled');
     if (!allowedAppointmentStatuses.has(status)) throw new FleetOperationsError('Appointment status is invalid', 400);
-    const payload = { organization_id: org, work_order_id: input.workOrderId || null, customer_id: input.customerId || null, vehicle_id: input.vehicleId || null, location_id: input.locationId || null, starts_at: startsAt, ends_at: endsAt, status, notes: input.notes || null };
+    const payload = { id: randomUUID(), organization_id: org, work_order_id: input.workOrderId || null, customer_id: input.customerId || null, vehicle_id: input.vehicleId || null, location_id: input.locationId || null, starts_at: startsAt, ends_at: endsAt, status, notes: input.notes || null };
     return this.request<JsonRecord[]>(this.token(authorization), 'appointments', { method: 'POST', body: JSON.stringify(payload) });
   }
 
@@ -81,7 +82,7 @@ export class ScheduleDispatchService {
   async createDispatch(organizationId: unknown, authorization: string | undefined, input: JsonRecord) {
     const org = this.org(organizationId); const status = String(input.status || 'assigned');
     if (!allowedDispatchStatuses.has(status)) throw new FleetOperationsError('Dispatch status is invalid', 400);
-    const payload = { organization_id: org, work_order_id: cleanId(input.workOrderId, 'workOrderId'), appointment_id: input.appointmentId || null, technician_id: cleanId(input.technicianId, 'technicianId'), resource_id: input.resourceId || null, status, starts_at: input.startsAt ? isoDate(input.startsAt, 'startsAt') : null };
+    const payload = { id: randomUUID(), organization_id: org, work_order_id: cleanId(input.workOrderId, 'workOrderId'), appointment_id: input.appointmentId || null, technician_id: cleanId(input.technicianId, 'technicianId'), resource_id: input.resourceId || null, status, starts_at: input.startsAt ? isoDate(input.startsAt, 'startsAt') : null };
     return this.request<JsonRecord[]>(this.token(authorization), 'dispatch_assignments', { method: 'POST', body: JSON.stringify(payload) });
   }
 
