@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Sparkles,
   Bell,
@@ -62,6 +62,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [newAccName, setNewAccName] = useState('');
   const [newAccEmail, setNewAccEmail] = useState('');
   const [showSavedToast, setShowSavedToast] = useState(false);
+  const [google, setGoogle] = useState<{ configured: boolean; connected: boolean; account?: { email: string; name?: string } } | null>(null);
+  const [googleBusy, setGoogleBusy] = useState(false);
+
+  const loadGoogleStatus = async () => {
+    try {
+      const response = await fetch('/api/google/status');
+      const data = await response.json();
+      setGoogle(data);
+    } catch {
+      setGoogle({ configured: false, connected: false });
+    }
+  };
+
+  useEffect(() => { void loadGoogleStatus(); }, []);
+
+  const disconnectGoogle = async () => {
+    setGoogleBusy(true);
+    try {
+      await fetch('/api/google/disconnect', { method: 'POST' });
+      await loadGoogleStatus();
+    } finally { setGoogleBusy(false); }
+  };
 
   const handleSave = () => {
     onSaveSettings({
@@ -250,6 +272,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {/* Card 3: Neon Database & Auth Quickstart */}
         <NeonDatabasePanel />
+
+        <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center">
+                <Mail className="w-5 h-5 text-[#0b57d0]" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-slate-900">Google Workspace</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  {google?.connected
+                    ? `${google.account?.email || 'Google account'} · Gmail and Calendar connected`
+                    : 'Connect Gmail and Google Calendar with one secure authorization.'}
+                </p>
+                {google?.connected && <span className="inline-flex mt-2 items-center gap-1 text-[11px] font-semibold text-emerald-700"><ShieldCheck className="w-3.5 h-3.5" />Encrypted connection active</span>}
+                {google && !google.configured && <p className="text-[11px] text-amber-700 mt-2">Google OAuth environment variables are incomplete.</p>}
+              </div>
+            </div>
+            {google?.connected ? (
+              <button type="button" disabled={googleBusy} onClick={disconnectGoogle} className="px-4 py-2 rounded-xl text-xs font-semibold text-red-700 border border-red-200 hover:bg-red-50 disabled:opacity-50">Disconnect</button>
+            ) : (
+              <a href="/api/google/oauth/start" aria-disabled={!google?.configured} className={`px-4 py-2 rounded-xl text-xs font-semibold text-white bg-[#0b57d0] hover:bg-[#0848b0] text-center ${!google?.configured ? 'opacity-50 pointer-events-none' : ''}`}>Connect Google</a>
+            )}
+          </div>
+        </div>
 
         {/* Card 4: Connected Accounts */}
         <div className="p-6 rounded-2xl border border-slate-200 bg-white space-y-4 shadow-xs">

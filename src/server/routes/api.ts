@@ -124,6 +124,7 @@ apiRouter.get('/status', (req, res) => {
     atlasCloudConfigured: Boolean(atlasKey && atlasKey !== 'your-atlascloud-api-key' && atlasKey.trim() !== ''),
     agentMailConfigured: Boolean(agentKey && agentKey !== 'your-agentmail-api-key' && agentKey.trim() !== ''),
     neonConfigured: Boolean(NEON_DATA_API_URL && NEON_AUTH_URL),
+    googleConfigured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_TOKEN_ENCRYPTION_KEY),
     neonDataApiUrl: NEON_DATA_API_URL,
     neonAuthUrl: NEON_AUTH_URL,
     defaultInbox: DEFAULT_INBOX,
