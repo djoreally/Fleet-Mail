@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { serverConfig } from '../config';
-import { callAICompletion } from '../services/ai';
-import { getAgentMailClient } from '../services/agentmail';
-import type { StoredContact, StoredEmail } from '../types';
+import { serverConfig } from '../config.js';
+import { callAICompletion } from '../services/ai.js';
+import { getAgentMailClient } from '../services/agentmail.js';
+import type { StoredContact, StoredEmail } from '../types.js';
 
 export const apiRouter = Router();
 

@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { serverConfig } from '../config';
+import { serverConfig } from '../config.js';
 
 export interface AIMessage {
   role: string;
