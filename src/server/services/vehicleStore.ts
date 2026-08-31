@@ -1,4 +1,5 @@
 import { Pool } from '@neondatabase/serverless';
+import { randomUUID } from 'node:crypto';
 
 export type VehicleStatus = 'active' | 'in_service' | 'out_of_service';
 
@@ -89,9 +90,9 @@ async function insertVehicle(pool: Queryable, organizationId: string, raw: Vehic
   const metadata = { trim: value.trim, type: value.type, assignment: value.assignment };
   try {
     const result = await pool.query(`INSERT INTO vehicles
-      (organization_id, unit_number, vin, year, make, model, engine, mileage, status, metadata)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb) RETURNING ${selectColumns}`,
-      [organizationId, value.unitNumber, value.vin, value.year, value.make, value.model, value.engine, value.mileage, value.status, JSON.stringify(metadata)]);
+      (id, organization_id, unit_number, vin, year, make, model, engine, mileage, status, metadata)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb) RETURNING ${selectColumns}`,
+      [randomUUID(), organizationId, value.unitNumber, value.vin, value.year, value.make, value.model, value.engine, value.mileage, value.status, JSON.stringify(metadata)]);
     return result.rows[0];
   } catch (error) {
     if (error instanceof Error && /unique|duplicate/i.test(error.message)) throw new VehicleStoreError(`Unit ${value.unitNumber} already exists`, 409);
