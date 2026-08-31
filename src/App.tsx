@@ -322,9 +322,10 @@ function FleetWorkspaceApp({ onSignOut }: { onSignOut?: () => void }) {
       const assistantMsg: ChatMessage = {
         id: `ai_${Date.now()}`,
         role: 'assistant',
-        content: data.content,
+        content: String(data.content || '').replace(/```json:agent_action\s*[\s\S]*?\s*```/g, '').trim(),
         timestamp: new Date().toISOString(),
-        emailDraft: data.emailDraft
+        emailDraft: data.emailDraft,
+        actionProposal: data.actionProposal ? { ...data.actionProposal, state: 'ready' } : undefined
       };
 
       setChatMessages(prev => [...prev, assistantMsg]);
@@ -346,6 +347,29 @@ function FleetWorkspaceApp({ onSignOut }: { onSignOut?: () => void }) {
     }
   };
 
+  const handleConfirmAgentAction = async (messageId: string, confirmationToken: string) => {
+    setChatMessages((messages) => messages.map((message) => message.id === messageId && message.actionProposal
+      ? { ...message, actionProposal: { ...message.actionProposal, state: 'executing', error: undefined } }
+      : message));
+    try {
+      const response = await fetch('/api/agent/actions/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmationToken, confirmed: true }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || 'The action could not be executed');
+      setChatMessages((messages) => messages.map((message) => message.id === messageId && message.actionProposal
+        ? { ...message, actionProposal: { ...message.actionProposal, state: 'executed' } }
+        : message));
+      if (body.kind === 'email.send') await fetchEmails(false);
+    } catch (error) {
+      setChatMessages((messages) => messages.map((message) => message.id === messageId && message.actionProposal
+        ? { ...message, actionProposal: { ...message.actionProposal, state: 'failed', error: error instanceof Error ? error.message : 'The action failed' } }
+        : message));
+    }
+  };
+
   // Send & Schedule Draft from AI Chat Card
   const handleSendAndScheduleDraft = async (draft: { to: string; subject: string; body: string }) => {
     const success = await handleSendEmail({
@@ -359,7 +383,7 @@ function FleetWorkspaceApp({ onSignOut }: { onSignOut?: () => void }) {
       const confirmMsg: ChatMessage = {
         id: `conf_${Date.now()}`,
         role: 'assistant',
-        content: `✅ Email dispatched to **${draft.to}** and calendar sync scheduled for tomorrow at 10:00 AM.`,
+        content: `✅ Email dispatched to **${draft.to}**. No calendar event was created. Calendar writes require a separate reviewed confirmation.`,
         timestamp: new Date().toISOString()
       };
       setChatMessages(prev => [...prev, confirmMsg]);
@@ -492,6 +516,7 @@ function FleetWorkspaceApp({ onSignOut }: { onSignOut?: () => void }) {
               onSendMessage={handleSendChatMessage}
               isLoading={isChatLoading}
               onSendAndScheduleDraft={handleSendAndScheduleDraft}
+              onConfirmAction={handleConfirmAgentAction}
               userAvatar="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"
             />
           )}

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Check,
@@ -13,6 +13,7 @@ import {
   Upload,
   X
 } from 'lucide-react';
+import { fleetFetch } from '../../lib/fleetApi';
 
 type VehicleStatus = 'Active' | 'In service' | 'Out of service';
 
@@ -68,13 +69,44 @@ export interface VehicleWorkspaceProps {
   onVehiclesImported?: (vehicles: VehicleDraft[]) => void;
 }
 
-const initialVehicles: Vehicle[] = [
-  { id: 'v1', unit: 'TRK-104', vin: '1FTFW1E89PFA10452', year: '2023', make: 'Ford', model: 'F-150', trim: 'XL', type: 'Pickup', mileage: '38,412', assignment: 'North District', status: 'Active' },
-  { id: 'v2', unit: 'VAN-218', vin: '1GCWGAFP8P1157834', year: '2023', make: 'Chevrolet', model: 'Express', trim: '2500', type: 'Cargo van', mileage: '46,890', assignment: 'Mobile Service 2', status: 'In service' },
-  { id: 'v3', unit: 'TRK-087', vin: '3C6UR5CL7NG241907', year: '2022', make: 'Ram', model: '2500', trim: 'Tradesman', type: 'Pickup', mileage: '71,204', assignment: 'West District', status: 'Active' },
-  { id: 'v4', unit: 'SUV-031', vin: '1FM5K8GC8NGA31948', year: '2022', make: 'Ford', model: 'Explorer', trim: 'ST', type: 'SUV', mileage: '54,620', assignment: 'Operations', status: 'Out of service' },
-  { id: 'v5', unit: 'VAN-191', vin: '2C4JRGAG5PR508122', year: '2023', make: 'Chrysler', model: 'Voyager', trim: 'LX', type: 'Van', mileage: '29,104', assignment: 'South District', status: 'Active' }
-];
+interface StoredVehicle {
+  id: string;
+  unit_number: string;
+  vin: string | null;
+  year: number | null;
+  make: string | null;
+  model: string | null;
+  mileage: number | null;
+  status: 'active' | 'in_service' | 'out_of_service';
+  metadata?: { trim?: string | null; type?: string | null; assignment?: string | null } | null;
+}
+
+const fromStoredVehicle = (vehicle: StoredVehicle): Vehicle => ({
+  id: vehicle.id,
+  unit: vehicle.unit_number,
+  vin: vehicle.vin || '',
+  year: vehicle.year ? String(vehicle.year) : '',
+  make: vehicle.make || '',
+  model: vehicle.model || '',
+  trim: vehicle.metadata?.trim || '',
+  type: vehicle.metadata?.type || '',
+  mileage: (vehicle.mileage || 0).toLocaleString(),
+  assignment: vehicle.metadata?.assignment || '',
+  status: vehicle.status === 'in_service' ? 'In service' : vehicle.status === 'out_of_service' ? 'Out of service' : 'Active',
+});
+
+const toStoredInput = (vehicle: VehicleDraft) => ({
+  unitNumber: vehicle.unit,
+  vin: vehicle.vin || null,
+  year: vehicle.year ? Number(vehicle.year) : null,
+  make: vehicle.make || null,
+  model: vehicle.model || null,
+  mileage: vehicle.mileage ? Number(vehicle.mileage.replace(/,/g, '')) : 0,
+  status: 'active',
+  trim: vehicle.trim || null,
+  type: vehicle.type || null,
+  assignment: vehicle.assignment || null,
+});
 
 const emptyDraft: VehicleDraft = { unit: '', vin: '', year: '', make: '', model: '', trim: '', type: '', mileage: '', assignment: '' };
 const VIN_PATTERN = /^[A-HJ-NPR-Z0-9]{17}$/;
@@ -120,7 +152,9 @@ const statusStyle: Record<VehicleStatus, string> = {
 };
 
 export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdded, onVehiclesImported }) => {
-  const [vehicles, setVehicles] = useState(initialVehicles);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [loadingVehicles, setLoadingVehicles] = useState(true);
+  const [vehicleError, setVehicleError] = useState('');
   const [query, setQuery] = useState('');
   const [modal, setModal] = useState<'add' | 'import' | null>(null);
   const [draft, setDraft] = useState<VehicleDraft>(emptyDraft);
@@ -129,6 +163,19 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
   const [importRows, setImportRows] = useState<ImportRow[]>([]);
   const [importing, setImporting] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    fleetFetch('/api/vehicles')
+      .then(async response => {
+        const payload = await response.json() as { vehicles?: StoredVehicle[]; error?: string };
+        if (!response.ok) throw new Error(payload.error || 'Could not load vehicles.');
+        if (active) setVehicles((payload.vehicles || []).map(fromStoredVehicle));
+      })
+      .catch(error => { if (active) setVehicleError(error instanceof Error ? error.message : 'Could not load vehicles.'); })
+      .finally(() => { if (active) setLoadingVehicles(false); });
+    return () => { active = false; };
+  }, []);
 
   const filteredVehicles = useMemo(() => {
     const term = query.toLowerCase();
@@ -144,7 +191,7 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
     if (!VIN_PATTERN.test(draft.vin)) { setDecodeState('error'); setDecodeMessage('Enter a valid 17-character VIN. Letters I, O, and Q are not used.'); return; }
     setDecodeState('loading'); setDecodeMessage('');
     try {
-      const response = await fetch('/api/vehicles/decode-vin', {
+      const response = await fleetFetch('/api/vehicles/decode-vin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vin: draft.vin, modelYear: draft.year || undefined })
@@ -159,12 +206,20 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
     }
   };
 
-  const saveVehicle = () => {
+  const saveVehicle = async () => {
     if (!draft.unit || !VIN_PATTERN.test(draft.vin) || !draft.make || !draft.model) return;
-    const vehicle: Vehicle = { id: `v-${Date.now()}`, ...draft, status: 'Active', mileage: draft.mileage || '0' };
-    setVehicles(current => [vehicle, ...current]);
-    onVehicleAdded?.(draft);
-    closeModal();
+    setImporting(true); setVehicleError('');
+    try {
+      const response = await fleetFetch('/api/vehicles', { method: 'POST', body: JSON.stringify(toStoredInput(draft)) });
+      const payload = await response.json() as { vehicle?: StoredVehicle; error?: string };
+      if (!response.ok || !payload.vehicle) throw new Error(payload.error || 'Vehicle could not be saved.');
+      setVehicles(current => [fromStoredVehicle(payload.vehicle as StoredVehicle), ...current]);
+      onVehicleAdded?.(draft);
+      closeModal();
+    } catch (error) {
+      setVehicleError(error instanceof Error ? error.message : 'Vehicle could not be saved.');
+      setImporting(false);
+    }
   };
 
   const closeModal = () => { setModal(null); setDraft(emptyDraft); setDecodeState('idle'); setDecodeMessage(''); setImportRows([]); setImporting(false); };
@@ -187,7 +242,7 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
     const valid = rows.filter(row => row.status !== 'error');
     if (!valid.length) return;
     try {
-      const response = await fetch('/api/vehicles/decode-vins', {
+      const response = await fleetFetch('/api/vehicles/decode-vins', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vehicles: valid.map(row => ({ vin: row.vin, modelYear: row.year || undefined, row: row.row })) })
@@ -209,11 +264,19 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
   const finishImport = async () => {
     const ready = importRows.filter(row => row.status === 'ready');
     if (!ready.length) return;
-    setImporting(true);
+    setImporting(true); setVehicleError('');
     const drafts = ready.map(({ row: _row, status: _status, message: _message, ...vehicle }) => vehicle);
-    setVehicles(current => [...drafts.map((vehicle, index): Vehicle => ({ ...vehicle, id: `import-${Date.now()}-${index}`, status: 'Active', mileage: vehicle.mileage || '0' })), ...current]);
-    onVehiclesImported?.(drafts);
-    closeModal();
+    try {
+      const response = await fleetFetch('/api/vehicles/import', { method: 'POST', body: JSON.stringify({ vehicles: drafts.map(toStoredInput) }) });
+      const payload = await response.json() as { vehicles?: StoredVehicle[]; error?: string };
+      if (!response.ok) throw new Error(payload.error || 'Vehicles could not be imported.');
+      setVehicles(current => [...(payload.vehicles || []).map(fromStoredVehicle), ...current]);
+      onVehiclesImported?.(drafts);
+      closeModal();
+    } catch (error) {
+      setVehicleError(error instanceof Error ? error.message : 'Vehicles could not be imported.');
+      setImporting(false);
+    }
   };
 
   return (
@@ -231,12 +294,14 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
           {[['Total vehicles', vehicles.length, 'text-slate-950'], ['Available', vehicles.filter(v => v.status === 'Active').length, 'text-emerald-600'], ['In service', vehicles.filter(v => v.status === 'In service').length, 'text-amber-600'], ['Out of service', vehicles.filter(v => v.status === 'Out of service').length, 'text-rose-600']].map(([label, count, color]) => <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-medium text-slate-500">{label}</p><p className={`mt-2 text-2xl font-bold ${color}`}>{count}</p></div>)}
         </div>
 
+        {vehicleError && <div className="mt-5 flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"><AlertCircle className="h-5 w-5 shrink-0" /><span>{vehicleError}</span></div>}
+
         <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="relative max-w-sm flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search unit, VIN, vehicle…" className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" /></div>
             <button className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-600">All statuses <ChevronDown className="h-4 w-4" /></button>
           </div>
-          <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500"><tr>{['Unit','Vehicle','VIN','Mileage','Assignment','Status',''].map(value => <th key={value} className="px-5 py-3">{value}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{filteredVehicles.map(vehicle => <tr key={vehicle.id} className="hover:bg-slate-50/70"><td className="px-5 py-4 font-bold text-slate-900">{vehicle.unit}</td><td className="px-5 py-4"><p className="font-semibold text-slate-800">{vehicle.year} {vehicle.make} {vehicle.model}</p><p className="text-xs text-slate-400">{vehicle.trim} · {vehicle.type}</p></td><td className="px-5 py-4 font-mono text-xs text-slate-500">{vehicle.vin}</td><td className="px-5 py-4 font-medium text-slate-700">{vehicle.mileage} mi</td><td className="px-5 py-4 text-slate-600">{vehicle.assignment}</td><td className="px-5 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${statusStyle[vehicle.status]}`}>{vehicle.status}</span></td><td className="px-5 py-4"><button className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><MoreHorizontal className="h-4 w-4" /></button></td></tr>)}</tbody></table></div>
+          <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500"><tr>{['Unit','Vehicle','VIN','Mileage','Assignment','Status',''].map(value => <th key={value} className="px-5 py-3">{value}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{loadingVehicles ? <tr><td colSpan={7} className="px-5 py-12 text-center text-slate-500"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />Loading vehicles…</td></tr> : filteredVehicles.length === 0 ? <tr><td colSpan={7} className="px-5 py-12 text-center text-slate-500">No vehicles yet. Add a vehicle or import a CSV to begin.</td></tr> : filteredVehicles.map(vehicle => <tr key={vehicle.id} className="hover:bg-slate-50/70"><td className="px-5 py-4 font-bold text-slate-900">{vehicle.unit}</td><td className="px-5 py-4"><p className="font-semibold text-slate-800">{vehicle.year} {vehicle.make} {vehicle.model}</p><p className="text-xs text-slate-400">{vehicle.trim} · {vehicle.type}</p></td><td className="px-5 py-4 font-mono text-xs text-slate-500">{vehicle.vin}</td><td className="px-5 py-4 font-medium text-slate-700">{vehicle.mileage} mi</td><td className="px-5 py-4 text-slate-600">{vehicle.assignment || '—'}</td><td className="px-5 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${statusStyle[vehicle.status]}`}>{vehicle.status}</span></td><td className="px-5 py-4"><button className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><MoreHorizontal className="h-4 w-4" /></button></td></tr>)}</tbody></table></div>
           <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">Showing {filteredVehicles.length} of {vehicles.length} vehicles</div>
         </section>
       </div>
@@ -259,7 +324,7 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
               <Field label="Current mileage" value={draft.mileage} onChange={value => updateDraft('mileage', value)} placeholder="0" />
               <Field label="Assignment" value={draft.assignment} onChange={value => updateDraft('assignment', value)} placeholder="North District" />
             </div>
-            <div className="mt-7 flex justify-end gap-2"><button onClick={closeModal} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancel</button><button onClick={saveVehicle} disabled={!draft.unit || !VIN_PATTERN.test(draft.vin) || !draft.make || !draft.model} className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">Add vehicle</button></div>
+            <div className="mt-7 flex justify-end gap-2"><button onClick={closeModal} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancel</button><button onClick={saveVehicle} disabled={importing || !draft.unit || !VIN_PATTERN.test(draft.vin) || !draft.make || !draft.model} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">{importing && <Loader2 className="h-4 w-4 animate-spin" />}Add vehicle</button></div>
           </div> : <div className="p-6">
             {!importRows.length ? <button onClick={() => fileInput.current?.click()} className="flex w-full flex-col items-center rounded-2xl border-2 border-dashed border-slate-200 px-6 py-12 text-center hover:border-blue-300 hover:bg-blue-50/30"><span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600"><FileSpreadsheet className="h-6 w-6" /></span><span className="mt-4 font-bold text-slate-900">Choose a CSV file</span><span className="mt-1 text-sm text-slate-500">Required columns: unit, vin. Optional: mileage, assignment.</span><span className="mt-4 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white"><Upload className="h-4 w-4" />Browse files</span></button> : <>
               <div className="flex items-center justify-between"><div><p className="font-bold text-slate-900">Validation preview</p><p className="text-sm text-slate-500">{importRows.filter(row => row.status === 'ready').length} ready · {importRows.filter(row => row.status === 'error').length} need attention</p></div><button onClick={() => { setImportRows([]); fileInput.current?.click(); }} className="text-sm font-semibold text-blue-600">Choose another file</button></div>

@@ -14,14 +14,16 @@ export interface MigrationReport {
 export async function runDrizzleMigration(customDatabaseUrl?: string): Promise<MigrationReport> {
   const databaseUrl = customDatabaseUrl || process.env.DATABASE_URL || process.env.NEON_DATABASE_URL;
   if (!databaseUrl) throw new Error('DATABASE_URL or NEON_DATABASE_URL is required');
-  const migration = join(dirname(fileURLToPath(import.meta.url)), 'migrations', '0001_multitenant_rls.sql');
-  const source = await readFile(migration, 'utf8');
+  const migrationDirectory = join(dirname(fileURLToPath(import.meta.url)), 'migrations');
+  const migrations = ['0001_multitenant_rls.sql', '0002_neon_auth_tenant_bootstrap.sql'];
   const pool = new Pool({ connectionString: databaseUrl });
   try {
     await pool.query('BEGIN');
-    await pool.query(source);
+    for (const name of migrations) {
+      await pool.query(await readFile(join(migrationDirectory, name), 'utf8'));
+    }
     await pool.query('COMMIT');
-    return { success: true, migrations: ['0001_multitenant_rls.sql'], timestamp: new Date().toISOString() };
+    return { success: true, migrations, timestamp: new Date().toISOString() };
   } catch (error) {
     await pool.query('ROLLBACK');
     throw error;

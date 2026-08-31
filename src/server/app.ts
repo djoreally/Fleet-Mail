@@ -2,6 +2,11 @@ import express from 'express';
 import { apiRouter } from './routes/api.js';
 import { googleRouter } from './routes/google.js';
 import { agentmailCrudRouter } from './routes/agentmailCrud.js';
+import { agentActionsRouter } from './routes/agentActions.js';
+import { operationsRouter } from './routes/operations.js';
+import { customerPartsRouter } from './routes/customerParts.js';
+import { scheduleDispatchRouter } from './routes/scheduleDispatch.js';
+import { financialDocumentsRouter } from './routes/financialDocuments.js';
 
 export function createApp() {
   const app = express();
@@ -11,6 +16,11 @@ export function createApp() {
   app.use('/api', apiRouter);
   app.use('/api/google', googleRouter);
   app.use('/api/agentmail/crud', agentmailCrudRouter);
+  app.use('/api/agent/actions', agentActionsRouter);
+  app.use('/api/operations', operationsRouter);
+  app.use('/api/operations', customerPartsRouter);
+  app.use('/api/fleet-operations', scheduleDispatchRouter);
+  app.use('/api/fleet', financialDocumentsRouter);
 
   return app;
 }

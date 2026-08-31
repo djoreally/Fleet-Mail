@@ -46,7 +46,22 @@ export interface ChatMessage {
     body: string;
   };
   emailSummary?: EmailSummary;
+  actionProposal?: AgentActionProposal;
   isStreaming?: boolean;
+}
+
+export interface AgentActionProposal {
+  proposal: {
+    id: string;
+    kind: 'email.send' | 'calendar.create';
+    summary: string;
+    payload: Record<string, unknown>;
+    createdAt: string;
+    expiresAt: string;
+  };
+  confirmationToken: string;
+  state?: 'ready' | 'executing' | 'executed' | 'failed';
+  error?: string;
 }
 
 export interface SystemStatus {

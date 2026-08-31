@@ -3,9 +3,41 @@ import { serverConfig } from '../config.js';
 import { callAICompletion } from '../services/ai.js';
 import { getAgentMailClient } from '../services/agentmail.js';
 import { decodeVin, decodeVins, NhtsaError } from '../services/nhtsa.js';
+import { AGENT_SKILLS, redactObject, redactSensitiveData } from '../services/agentSkills.js';
+import { createAgentActionProposal } from '../services/agentActions.js';
+import { createVehicle, deleteVehicle, importVehicles, listVehicles, updateVehicle, VehicleStoreError } from '../services/vehicleStore.js';
+import { FleetAuthError, requireFleetOrganization } from '../services/fleetAuth.js';
 import type { StoredContact, StoredEmail } from '../types.js';
 
 export const apiRouter = Router();
+
+const vehicleError = (res: import('express').Response, error: unknown) => {
+  const status = error instanceof VehicleStoreError || error instanceof FleetAuthError ? error.status : 500;
+  return res.status(status).json({ error: error instanceof Error ? error.message : 'Vehicle operation failed' });
+};
+
+apiRouter.get('/vehicles', async (req, res) => {
+  try { return res.json(await listVehicles(await requireFleetOrganization(req))); } catch (error) { return vehicleError(res, error); }
+});
+
+apiRouter.post('/vehicles', async (req, res) => {
+  try { return res.status(201).json({ vehicle: await createVehicle(req.body ?? {}, await requireFleetOrganization(req)) }); } catch (error) { return vehicleError(res, error); }
+});
+
+apiRouter.post('/vehicles/import', async (req, res) => {
+  try {
+    const vehicles = await importVehicles(req.body?.vehicles, await requireFleetOrganization(req));
+    return res.status(201).json({ vehicles, count: vehicles.length });
+  } catch (error) { return vehicleError(res, error); }
+});
+
+apiRouter.put('/vehicles/:id', async (req, res) => {
+  try { return res.json({ vehicle: await updateVehicle(req.params.id, req.body ?? {}, await requireFleetOrganization(req)) }); } catch (error) { return vehicleError(res, error); }
+});
+
+apiRouter.delete('/vehicles/:id', async (req, res) => {
+  try { await deleteVehicle(req.params.id, await requireFleetOrganization(req)); return res.status(204).end(); } catch (error) { return vehicleError(res, error); }
+});
 
 const { atlasCloudBaseUrl: ATLASCLOUD_BASE_URL, atlasCloudModel: ATLASCLOUD_MODEL,
   agentMailBaseUrl: AGENTMAIL_BASE_URL, defaultInbox: DEFAULT_INBOX,
@@ -133,19 +165,42 @@ apiRouter.get('/status', (req, res) => {
   });
 });
 
+apiRouter.get('/agent/skills', (_req, res) => {
+  res.json({ skills: AGENT_SKILLS, model: ATLASCLOUD_MODEL, provider: 'AtlasCloud', confirmationPolicy: 'All external writes require an explicit user action.' });
+});
+
 // 2. Chat / Agent Completion API
 apiRouter.post('/chat', async (req, res) => {
   try {
-    const { messages, contextInbox, activeEmail } = req.body;
+    const { messages, contextInbox, activeEmail, personality = 'Professional' } = req.body;
+
+    let recentInbox: any[] = [];
+    try {
+      const mail = await getAgentMailClient()?.inboxes.messages.list(DEFAULT_INBOX, { limit: 12 });
+      recentInbox = (mail?.messages || []).map((item: any) => ({
+        from: item.from, to: item.to, subject: item.subject,
+        preview: String(item.text || item.preview || item.snippet || '').slice(0, 500),
+        createdAt: item.createdAt || item.created_at,
+      }));
+    } catch (error) {
+      console.warn('Agent grounding inbox unavailable:', error instanceof Error ? error.message : error);
+    }
+
+    const contactContext = typeof storedContacts === 'undefined' ? [] : storedContacts.slice(0, 40).map((contact) => ({ name: contact.name, email: contact.email, company: contact.company, role: contact.role }));
+    const groundedContext = redactObject({ selectedEmail: activeEmail || null, recentInbox, contacts: contactContext });
 
     const systemPrompt = `You are "ChatMail AI" powered by AtlasCloud's dots-studio/dots-3-note-prev-free model.
 You are an intelligent, proactive executive email copilot and communication assistant managing inbox "${contextInbox || DEFAULT_INBOX}".
 
-Your capabilities:
-1. Help the user draft professional, concise, and persuasive emails.
-2. Edit, refine, or translate email drafts to various tones (e.g., Professional, Warm, Urgent, Executive, Assertive).
-3. Summarize complex email threads and extract clear action items, blockers, and timelines.
-4. When drafting an email for the user to send, ALWAYS format the email clearly and include a structured JSON block at the end if an email is ready to send so the user can 1-click send it!
+You are the Fleet OS agent. Your enabled skills are thread memory, predictive drafting, sentiment and tone analysis, grounded recall, inbox/contact search, confirmed email execution, confirmed calendar execution, fleet-context reasoning, sensitive-data protection, and Sentinel confirmation.
+
+Rules:
+1. Ground names, facts, deadlines, and claims in the supplied context. Clearly label assumptions and never invent search results.
+2. Detect urgency, frustration, ambiguity, and relationship risk. Use the user's preferred ${personality} tone.
+3. Extract action items, owners, dates, blockers, and the safest next action.
+4. Never claim an email was sent, an event was created, or data was changed. You may prepare an action, but the UI executes it only after explicit confirmation.
+5. For outbound email, provide a one-click draft block. Never include secrets, SSNs, or payment-card data.
+6. For bulk work, prepare reviewable drafts; never auto-send a batch.
 
 Structure for 1-click sendable email block (if applicable):
 \`\`\`json:email_draft
@@ -156,8 +211,18 @@ Structure for 1-click sendable email block (if applicable):
 }
 \`\`\`
 
+When the user asks to send an email or create a calendar event, also prepare exactly one reviewable action block. Never say it was executed:
+\`\`\`json:agent_action
+{"kind":"email.send","payload":{"to":"recipient@example.com","subject":"Subject","text":"Body"}}
+\`\`\`
+or
+\`\`\`json:agent_action
+{"kind":"calendar.create","payload":{"title":"Event title","start":"ISO-8601 date-time","end":"ISO-8601 date-time","attendees":["person@example.com"],"description":"Optional context"}}
+\`\`\`
+
 Current Context:
 - Active Inbox: ${contextInbox || DEFAULT_INBOX}
+ - Grounded data: ${JSON.stringify(groundedContext)}
 ${activeEmail ? `- Selected Email Context:
   From: ${activeEmail.from}
   Subject: ${activeEmail.subject}
@@ -167,7 +232,8 @@ ${activeEmail ? `- Selected Email Context:
 
 Respond helpfully, clearly, and proactively.`;
 
-    const aiResult = await callAICompletion(messages, systemPrompt);
+    const safeMessages = (Array.isArray(messages) ? messages : []).map((message: any) => ({ ...message, content: redactSensitiveData(String(message.content || '')) }));
+    const aiResult = await callAICompletion(safeMessages, systemPrompt);
 
     // Check if there's an email draft block in the response
     let emailDraft = null;
@@ -180,11 +246,24 @@ Respond helpfully, clearly, and proactively.`;
       }
     }
 
+    let actionProposal = null;
+    const actionMatch = aiResult.content.match(/```json:agent_action\s*([\s\S]*?)\s*```/);
+    if (actionMatch) {
+      try {
+        const action = JSON.parse(actionMatch[1]);
+        actionProposal = createAgentActionProposal(action.kind, action.payload);
+      } catch (error) {
+        console.warn('Ignored invalid agent action proposal:', error instanceof Error ? error.message : error);
+      }
+    }
+
     res.json({
       content: aiResult.content,
       model: aiResult.model,
       provider: aiResult.provider,
       emailDraft
+      ,actionProposal
+      ,skillsUsed: ['context-memory', 'predictive-drafting', 'emotional-intelligence', 'grounded-recall', 'pii-redaction', 'sentinel']
     });
   } catch (error: any) {
     console.error('Chat error:', error);

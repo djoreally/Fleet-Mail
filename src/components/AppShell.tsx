@@ -1,6 +1,7 @@
 import React, { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { neon } from '../lib/neon';
 import { APP_ROUTES, navigate, usePathname } from '../lib/navigation';
+import { setActiveNeonAuthSession } from '../lib/neonAuthClient';
 
 export interface FleetAuthUser {
   id?: string;
@@ -65,6 +66,16 @@ function sessionUser(session: FleetAuthSession | null): FleetAuthUser | null {
   return session?.user && typeof session.user === 'object' ? session.user : null;
 }
 
+function sessionToken(session: FleetAuthSession | null): string | null {
+  if (!session) return null;
+  const value = session as Record<string, unknown>;
+  for (const key of ['token', 'accessToken', 'access_token', 'jwt']) {
+    if (typeof value[key] === 'string' && value[key]) return value[key] as string;
+  }
+  if (value.session && typeof value.session === 'object') return sessionToken(value.session as FleetAuthSession);
+  return null;
+}
+
 function renderScreen(screen: Screen, context: AppShellContext): ReactNode {
   return typeof screen === 'function' ? screen(context) : screen;
 }
@@ -90,11 +101,13 @@ export function AppShell({
       const response = await neon.auth.getSession();
       const nextSession = extractSession(response);
       setSession(nextSession);
+      setActiveNeonAuthSession(sessionToken(nextSession), sessionUser(nextSession));
       return nextSession;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to restore your session.';
       setAuthError(message);
       setSession(null);
+      setActiveNeonAuthSession(null, null);
       return null;
     } finally {
       setIsLoading(false);

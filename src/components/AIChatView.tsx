@@ -11,13 +11,15 @@ import {
   Sparkles,
   Search
 } from 'lucide-react';
-import { ChatMessage, EmailMessage } from '../types';
+import { ChatMessage } from '../types';
+import { AgentSkillsPanel } from './AgentSkillsPanel';
 
 interface AIChatViewProps {
   messages: ChatMessage[];
   onSendMessage: (text: string) => void;
   isLoading: boolean;
   onSendAndScheduleDraft: (draft: { to: string; subject: string; body: string }) => void;
+  onConfirmAction: (messageId: string, confirmationToken: string) => void;
   userAvatar?: string;
 }
 
@@ -26,9 +28,11 @@ export const AIChatView: React.FC<AIChatViewProps> = ({
   onSendMessage,
   isLoading,
   onSendAndScheduleDraft,
+  onConfirmAction,
   userAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
 }) => {
   const [inputText, setInputText] = useState('');
+  const [showSkills, setShowSkills] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -59,6 +63,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({
         </h2>
         <button
           title="More actions"
+          onClick={() => setShowSkills((value) => !value)}
           className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
         >
           <MoreVertical className="w-5 h-5" />
@@ -67,6 +72,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({
 
       {/* Messages Thread */}
       <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
+        {showSkills && <AgentSkillsPanel />}
         {/* Date Marker */}
         <div className="flex items-center justify-center">
           <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
@@ -135,6 +141,35 @@ export const AIChatView: React.FC<AIChatViewProps> = ({
                     </div>
                   )}
 
+                  {msg.actionProposal && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4" aria-label="Action awaiting confirmation">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Review required</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{msg.actionProposal.proposal.summary}</p>
+                          <p className="mt-1 text-xs text-slate-600">The agent prepared this action but has not executed it.</p>
+                        </div>
+                        {msg.actionProposal.proposal.kind === 'calendar.create' ? <Calendar className="h-5 w-5 shrink-0 text-amber-700" /> : <Send className="h-5 w-5 shrink-0 text-amber-700" />}
+                      </div>
+                      {msg.actionProposal.error && <p className="mt-3 text-xs font-medium text-red-700">{msg.actionProposal.error}</p>}
+                      <div className="mt-4 flex items-center justify-between gap-3 border-t border-amber-200 pt-3">
+                        <span className="text-[11px] text-slate-500">Expires in 10 minutes</span>
+                        {msg.actionProposal.state === 'executed' ? (
+                          <span className="text-xs font-bold text-emerald-700">Executed</span>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={msg.actionProposal.state === 'executing'}
+                            onClick={() => onConfirmAction(msg.id, msg.actionProposal!.confirmationToken)}
+                            className="rounded-xl bg-[#0b57d0] px-4 py-2 text-xs font-semibold text-white hover:bg-[#0848b0] disabled:opacity-50"
+                          >
+                            {msg.actionProposal.state === 'executing' ? 'Executing…' : msg.actionProposal.proposal.kind === 'calendar.create' ? 'Confirm & create event' : 'Confirm & send email'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Calendar Sync & Schedule Button (if present) */}
                   {msg.calendarInvite && (
                     <div className="flex items-center justify-between pt-2 border-t border-slate-100">
@@ -151,7 +186,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({
                         }}
                         className="px-4 py-2 rounded-xl bg-[#0b57d0] hover:bg-[#0848b0] text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
                       >
-                        Send & Schedule
+                        Send email only
                       </button>
                     </div>
                   )}
