@@ -1,5 +1,5 @@
 import { createClient } from '@neondatabase/neon-js';
-import { DEFAULT_NEON_DATA_API_URL, DEFAULT_NEON_AUTH_URL } from './neon';
+import { DEFAULT_NEON_DATA_API_URL } from './neonConfig';
 import { User, Email, Inbox, ContactRecord, ChatMessageRecord } from '../db/drizzleSchema';
 
 const TOKEN_STORAGE_KEY = 'neon_auth_token';

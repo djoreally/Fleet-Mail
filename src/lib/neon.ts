@@ -1,10 +1,8 @@
 import { createClient } from '@neondatabase/neon-js';
 import { Contact, EmailMessage } from '../types';
+import { DEFAULT_NEON_AUTH_URL, DEFAULT_NEON_DATA_API_URL } from './neonConfig';
 
-export const DEFAULT_NEON_DATA_API_URL =
-  'https://ep-sparkling-pine-afqf3sia.apirest.c-2.us-west-2.aws.neon.tech/neondb/rest/v1';
-export const DEFAULT_NEON_AUTH_URL =
-  'https://ep-sparkling-pine-afqf3sia.neonauth.c-2.us-west-2.aws.neon.tech/neondb/auth';
+export { DEFAULT_NEON_AUTH_URL, DEFAULT_NEON_DATA_API_URL } from './neonConfig';
 
 const dataApiUrl =
   (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.VITE_NEON_DATA_API_URL) ||
