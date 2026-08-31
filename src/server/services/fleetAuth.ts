@@ -15,9 +15,20 @@ function database() {
   return value;
 }
 
-function authUser(payload: any) {
-  const root = payload?.data || payload;
-  return root?.user || root?.session?.user || root?.session?.data?.user || payload?.user || null;
+export function authUser(payload: any) {
+  const roots = [payload, payload?.data, payload?.session, payload?.data?.session];
+  const users = [
+    payload?.user,
+    payload?.data?.user,
+    payload?.session?.user,
+    payload?.data?.session?.user,
+    payload?.session?.data?.user,
+    payload?.data?.session?.data?.user,
+  ];
+  const isIdentity = (value: any) => value && typeof value === 'object' && Boolean(
+    value.id || value.userId || value.user_id || value.sub
+  );
+  return users.find(isIdentity) || roots.find(isIdentity) || null;
 }
 
 function verifiedBearerClaims(authorization: string) {
@@ -43,14 +54,15 @@ export async function requireFleetOrganization(req: Request): Promise<string> {
   // The Auth service has already verified this bearer token. Claims are used
   // only to fill identity fields omitted by some Neon Auth response versions.
   const claims = verifiedBearerClaims(authorization);
-  const subject = String(identity?.id || identity?.userId || claims?.sub || '');
-  const email = String(identity?.email || identity?.emailAddress || claims?.email || `${subject}@fleet.local`);
+  const subject = String(identity?.id || identity?.userId || identity?.user_id || identity?.sub || claims?.sub || '');
+  const email = String(identity?.email || identity?.emailAddress || identity?.email_address || identity?.user?.email || claims?.email || `${subject}@fleet.local`);
   if (!subject || !email) throw new FleetAuthError(401, 'Authenticated user identity is incomplete');
 
   const db = database();
   let [user] = await db.select().from(users).where(eq(users.authSubject, subject)).limit(1);
   if (!user) {
-    [user] = await db.insert(users).values({ id: randomUUID(), authSubject: subject, email: email.toLowerCase(), name: String(identity.name || email.split('@')[0]) }).returning();
+    const displayName = identity?.name || identity?.displayName || identity?.display_name || identity?.user_metadata?.name || email.split('@')[0];
+    [user] = await db.insert(users).values({ id: randomUUID(), authSubject: subject, email: email.toLowerCase(), name: String(displayName) }).returning();
   }
 
   const requested = req.header('x-organization-id');
