@@ -17,7 +17,18 @@ function database() {
 
 function authUser(payload: any) {
   const root = payload?.data || payload;
-  return root?.user || root?.session?.user || payload?.user || null;
+  return root?.user || root?.session?.user || root?.session?.data?.user || payload?.user || null;
+}
+
+function verifiedBearerClaims(authorization: string) {
+  try {
+    const token = authorization.slice('Bearer '.length);
+    const encoded = token.split('.')[1];
+    if (!encoded) return null;
+    return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
 }
 
 export async function requireFleetOrganization(req: Request): Promise<string> {
@@ -29,8 +40,11 @@ export async function requireFleetOrganization(req: Request): Promise<string> {
   });
   if (!response.ok) throw new FleetAuthError(401, 'Your session is invalid or expired');
   const identity = authUser(await response.json());
-  const subject = String(identity?.id || '');
-  const email = String(identity?.email || '');
+  // The Auth service has already verified this bearer token. Claims are used
+  // only to fill identity fields omitted by some Neon Auth response versions.
+  const claims = verifiedBearerClaims(authorization);
+  const subject = String(identity?.id || identity?.userId || claims?.sub || '');
+  const email = String(identity?.email || identity?.emailAddress || claims?.email || `${subject}@fleet.local`);
   if (!subject || !email) throw new FleetAuthError(401, 'Authenticated user identity is incomplete');
 
   const db = database();

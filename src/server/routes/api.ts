@@ -3,7 +3,7 @@ import { serverConfig } from '../config.js';
 import { callAICompletion } from '../services/ai.js';
 import { getAgentMailClient } from '../services/agentmail.js';
 import { decodeVin, decodeVins, NhtsaError } from '../services/nhtsa.js';
-import { AGENT_SKILLS, redactObject, redactSensitiveData } from '../services/agentSkills.js';
+import { AGENT_SKILLS, formatAgentPlainText, redactObject, redactSensitiveData } from '../services/agentSkills.js';
 import { createAgentActionProposal } from '../services/agentActions.js';
 import { createVehicle, deleteVehicle, importVehicles, listVehicles, updateVehicle, VehicleStoreError } from '../services/vehicleStore.js';
 import { FleetAuthError, requireFleetOrganization } from '../services/fleetAuth.js';
@@ -201,6 +201,7 @@ Rules:
 4. Never claim an email was sent, an event was created, or data was changed. You may prepare an action, but the UI executes it only after explicit confirmation.
 5. For outbound email, provide a one-click draft block. Never include secrets, SSNs, or payment-card data.
 6. For bulk work, prepare reviewable drafts; never auto-send a batch.
+7. The visible response must be plain human-readable text. Never use Markdown headings, asterisks, underscores, tables, or fenced code. Use short paragraphs and simple sentences.
 
 Structure for 1-click sendable email block (if applicable):
 \`\`\`json:email_draft
@@ -258,7 +259,7 @@ Respond helpfully, clearly, and proactively.`;
     }
 
     res.json({
-      content: aiResult.content,
+      content: formatAgentPlainText(aiResult.content),
       model: aiResult.model,
       provider: aiResult.provider,
       emailDraft

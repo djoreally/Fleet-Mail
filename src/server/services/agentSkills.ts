@@ -37,3 +37,16 @@ export function redactObject(value: unknown): unknown {
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactObject(item)]));
   return value;
 }
+
+export function formatAgentPlainText(value: string) {
+  return value
+    .replace(/```json:(?:email_draft|agent_action)[\s\S]*?```/gi, '')
+    .replace(/```[a-z]*\s*([\s\S]*?)```/gi, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/^\s*[-*+]\s+/gm, '• ')
+    .replace(/^\s*---+\s*$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
