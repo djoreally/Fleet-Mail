@@ -8,6 +8,7 @@ import { createAgentActionProposal } from '../services/agentActions.js';
 import { createVehicle, deleteVehicle, importVehicles, listVehicles, updateVehicle, VehicleStoreError } from '../services/vehicleStore.js';
 import { FleetAuthError, requireFleetOrganization } from '../services/fleetAuth.js';
 import type { StoredContact, StoredEmail } from '../types.js';
+import { createPostgresRepositories, NeonPoolExecutor } from '../repositories/index.js';
 
 export const apiRouter = Router();
 
@@ -664,29 +665,20 @@ apiRouter.post('/agentmail/simulate-incoming', async (req, res) => {
 
 // 7. Contacts API & Address Book Endpoints
 let storedContacts: StoredContact[] = [];
+const contactRepository = () => {
+  const connectionString = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
+  if (!connectionString) throw new Error('DATABASE_URL is required');
+  return createPostgresRepositories(NeonPoolExecutor.fromConnectionString(connectionString)).contacts;
+};
+const presentContact = (contact:any):StoredContact => ({ id:contact.id,name:contact.name,email:contact.email,company:contact.company||undefined,role:contact.role||undefined,phone:contact.phone||undefined,notes:contact.notes||undefined,tags:contact.tags||[],isFavorite:Boolean(contact.isFavorite),source:contact.source||'manual',lastContacted:contact.updatedAt ? new Date(contact.updatedAt).toISOString() : undefined });
 
 // GET /api/contacts - List contacts
-apiRouter.get('/contacts', (req, res) => {
-  const query = (req.query.q as string || '').toLowerCase().trim();
-  let result = [...storedContacts];
-
-  if (query) {
-    result = result.filter(c =>
-      c.name.toLowerCase().includes(query) ||
-      c.email.toLowerCase().includes(query) ||
-      (c.company && c.company.toLowerCase().includes(query)) ||
-      (c.tags && c.tags.some(t => t.toLowerCase().includes(query)))
-    );
-  }
-
-  res.json({
-    contacts: result,
-    total: result.length
-  });
+apiRouter.get('/contacts', async (req, res) => {
+  try { const organizationId=await requireFleetOrganization(req); const query=String(req.query.q||'').toLowerCase().trim(); const all=(await contactRepository().list(organizationId,{limit:500})).map(presentContact); const contacts=query?all.filter(c=>`${c.name} ${c.email} ${c.company||''} ${(c.tags||[]).join(' ')}`.toLowerCase().includes(query)):all; return res.json({contacts,total:contacts.length}); } catch(error) { return vehicleError(res,error); }
 });
 
 // POST /api/contacts - Create contact
-apiRouter.post('/contacts', (req, res) => {
+apiRouter.post('/contacts', async (req, res) => {
   const { name, email, company, role, phone, tags, notes, isFavorite } = req.body;
 
   if (!email) {
@@ -694,66 +686,17 @@ apiRouter.post('/contacts', (req, res) => {
   }
 
   const cleanEmail = email.trim().toLowerCase();
-  const existingIndex = storedContacts.findIndex(c => c.email.toLowerCase() === cleanEmail);
-
-  const newContact: StoredContact = {
-    id: `cnt_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-    name: name?.trim() || cleanEmail.split('@')[0],
-    email: cleanEmail,
-    company: company?.trim() || undefined,
-    role: role?.trim() || undefined,
-    phone: phone?.trim() || undefined,
-    avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name || cleanEmail)}`,
-    tags: Array.isArray(tags) ? tags : (tags ? [tags] : ['General']),
-    notes: notes?.trim() || undefined,
-    isFavorite: Boolean(isFavorite),
-    lastContacted: new Date().toISOString(),
-    source: 'manual'
-  };
-
-  if (existingIndex >= 0) {
-    // Update existing
-    storedContacts[existingIndex] = {
-      ...storedContacts[existingIndex],
-      ...newContact,
-      id: storedContacts[existingIndex].id
-    };
-    return res.json({ success: true, contact: storedContacts[existingIndex], updated: true });
-  }
-
-  storedContacts.unshift(newContact);
-  res.status(201).json({ success: true, contact: newContact });
+  try { const organizationId=await requireFleetOrganization(req); const saved=await contactRepository().upsert(organizationId,{name:name?.trim()||cleanEmail.split('@')[0],email:cleanEmail,company:company?.trim()||null,role:role?.trim()||null,phone:phone?.trim()||null,notes:notes?.trim()||null,tags:Array.isArray(tags)?tags:(tags?[tags]:['General']),isFavorite:Boolean(isFavorite),source:'manual'}); return res.status(201).json({success:true,contact:presentContact(saved)}); } catch(error) { return vehicleError(res,error); }
 });
 
 // PUT /api/contacts/:id - Update contact
-apiRouter.put('/contacts/:id', (req, res) => {
-  const { id } = req.params;
-  const index = storedContacts.findIndex(c => c.id === id);
-
-  if (index === -1) {
-    return res.status(404).json({ error: 'Contact not found' });
-  }
-
-  storedContacts[index] = {
-    ...storedContacts[index],
-    ...req.body,
-    id: storedContacts[index].id
-  };
-
-  res.json({ success: true, contact: storedContacts[index] });
+apiRouter.put('/contacts/:id', async (req, res) => {
+  try { const organizationId=await requireFleetOrganization(req); const current=await contactRepository().getById(organizationId,req.params.id); if(!current)return res.status(404).json({error:'Contact not found'}); const saved=await contactRepository().upsert(organizationId,{...current,...req.body,id:current.id}); return res.json({success:true,contact:presentContact(saved)}); } catch(error) { return vehicleError(res,error); }
 });
 
 // DELETE /api/contacts/:id - Delete contact
-apiRouter.delete('/contacts/:id', (req, res) => {
-  const { id } = req.params;
-  const initialLength = storedContacts.length;
-  storedContacts = storedContacts.filter(c => c.id !== id);
-
-  if (storedContacts.length === initialLength) {
-    return res.status(404).json({ error: 'Contact not found' });
-  }
-
-  res.json({ success: true, deletedId: id });
+apiRouter.delete('/contacts/:id', async (req, res) => {
+  try { const organizationId=await requireFleetOrganization(req); const deleted=await contactRepository().delete(organizationId,req.params.id); if(!deleted)return res.status(404).json({error:'Contact not found'}); return res.json({success:true,deletedId:req.params.id}); } catch(error) { return vehicleError(res,error); }
 });
 
 // POST /api/contacts/extract-from-inbox - Automatically discover contacts from messages
