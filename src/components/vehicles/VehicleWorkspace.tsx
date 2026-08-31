@@ -7,11 +7,13 @@ import {
   Download,
   FileSpreadsheet,
   Loader2,
-  MoreHorizontal,
+  Eye,
+  Pencil,
   Plus,
   Search,
   Upload,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import { fleetFetch } from '../../lib/fleetApi';
 
@@ -156,7 +158,8 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
   const [loadingVehicles, setLoadingVehicles] = useState(true);
   const [vehicleError, setVehicleError] = useState('');
   const [query, setQuery] = useState('');
-  const [modal, setModal] = useState<'add' | 'import' | null>(null);
+  const [modal, setModal] = useState<'add' | 'edit' | 'view' | 'import' | null>(null);
+  const [selected, setSelected] = useState<Vehicle | null>(null);
   const [draft, setDraft] = useState<VehicleDraft>(emptyDraft);
   const [decodeState, setDecodeState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [decodeMessage, setDecodeMessage] = useState('');
@@ -210,10 +213,11 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
     if (!draft.unit || !VIN_PATTERN.test(draft.vin) || !draft.make || !draft.model) return;
     setImporting(true); setVehicleError('');
     try {
-      const response = await fleetFetch('/api/vehicles', { method: 'POST', body: JSON.stringify(toStoredInput(draft)) });
+      const response = await fleetFetch(selected ? `/api/vehicles/${selected.id}` : '/api/vehicles', { method: selected ? 'PUT' : 'POST', body: JSON.stringify(toStoredInput(draft)) });
       const payload = await response.json() as { vehicle?: StoredVehicle; error?: string };
       if (!response.ok || !payload.vehicle) throw new Error(payload.error || 'Vehicle could not be saved.');
-      setVehicles(current => [fromStoredVehicle(payload.vehicle as StoredVehicle), ...current]);
+      const saved = fromStoredVehicle(payload.vehicle as StoredVehicle);
+      setVehicles(current => selected ? current.map(item => item.id === selected.id ? saved : item) : [saved, ...current]);
       onVehicleAdded?.(draft);
       closeModal();
     } catch (error) {
@@ -222,7 +226,9 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
     }
   };
 
-  const closeModal = () => { setModal(null); setDraft(emptyDraft); setDecodeState('idle'); setDecodeMessage(''); setImportRows([]); setImporting(false); };
+  const closeModal = () => { setModal(null); setSelected(null); setDraft(emptyDraft); setDecodeState('idle'); setDecodeMessage(''); setImportRows([]); setImporting(false); };
+  const openVehicle = (kind:'view'|'edit', vehicle:Vehicle) => { setSelected(vehicle); setDraft({unit:vehicle.unit,vin:vehicle.vin,year:vehicle.year,make:vehicle.make,model:vehicle.model,trim:vehicle.trim||'',type:vehicle.type,mileage:vehicle.mileage.replace(/,/g,''),assignment:vehicle.assignment}); setModal(kind); };
+  const deleteVehicle = async (vehicle:Vehicle) => { if(!window.confirm(`Delete Unit ${vehicle.unit}?`)) return; setVehicleError(''); try { const response=await fleetFetch(`/api/vehicles/${vehicle.id}`,{method:'DELETE'}); const body=await response.json().catch(()=>({})) as {error?:string}; if(!response.ok) throw new Error(body.error||`Request failed (${response.status})`); setVehicles(current=>current.filter(item=>item.id!==vehicle.id)); } catch(error) { setVehicleError(error instanceof Error?error.message:'Vehicle could not be deleted.'); } };
 
   const loadCsv = async (file: File) => {
     const parsed = parseCsv(await file.text());
@@ -286,7 +292,7 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
           <div><p className="text-xs font-bold uppercase tracking-[.18em] text-blue-600">Fleet registry</p><h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">Vehicles</h1><p className="mt-2 text-sm text-slate-500">Every unit, assignment, and service status in one place.</p></div>
           <div className="flex gap-2">
             <button onClick={() => setModal('import')} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"><Upload className="h-4 w-4" />Import CSV</button>
-            <button onClick={() => setModal('add')} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"><Plus className="h-4 w-4" />Add vehicle</button>
+            <button onClick={() => { setSelected(null); setDraft(emptyDraft); setModal('add'); }} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"><Plus className="h-4 w-4" />Add vehicle</button>
           </div>
         </div>
 
@@ -301,15 +307,15 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
             <div className="relative max-w-sm flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search unit, VIN, vehicle…" className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" /></div>
             <button className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-600">All statuses <ChevronDown className="h-4 w-4" /></button>
           </div>
-          <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500"><tr>{['Unit','Vehicle','VIN','Mileage','Assignment','Status',''].map(value => <th key={value} className="px-5 py-3">{value}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{loadingVehicles ? <tr><td colSpan={7} className="px-5 py-12 text-center text-slate-500"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />Loading vehicles…</td></tr> : filteredVehicles.length === 0 ? <tr><td colSpan={7} className="px-5 py-12 text-center text-slate-500">No vehicles yet. Add a vehicle or import a CSV to begin.</td></tr> : filteredVehicles.map(vehicle => <tr key={vehicle.id} className="hover:bg-slate-50/70"><td className="px-5 py-4 font-bold text-slate-900">{vehicle.unit}</td><td className="px-5 py-4"><p className="font-semibold text-slate-800">{vehicle.year} {vehicle.make} {vehicle.model}</p><p className="text-xs text-slate-400">{vehicle.trim} · {vehicle.type}</p></td><td className="px-5 py-4 font-mono text-xs text-slate-500">{vehicle.vin}</td><td className="px-5 py-4 font-medium text-slate-700">{vehicle.mileage} mi</td><td className="px-5 py-4 text-slate-600">{vehicle.assignment || '—'}</td><td className="px-5 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${statusStyle[vehicle.status]}`}>{vehicle.status}</span></td><td className="px-5 py-4"><button className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><MoreHorizontal className="h-4 w-4" /></button></td></tr>)}</tbody></table></div>
+          <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500"><tr>{['Unit','Vehicle','VIN','Mileage','Assignment','Status','Actions'].map(value => <th key={value} className="px-5 py-3">{value}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{loadingVehicles ? <tr><td colSpan={7} className="px-5 py-12 text-center text-slate-500"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />Loading vehicles…</td></tr> : filteredVehicles.length === 0 ? <tr><td colSpan={7} className="px-5 py-12 text-center text-slate-500">No vehicles yet. Add a vehicle or import a CSV to begin.</td></tr> : filteredVehicles.map(vehicle => <tr key={vehicle.id} className="hover:bg-slate-50/70"><td className="px-5 py-4 font-bold text-slate-900">{vehicle.unit}</td><td className="px-5 py-4"><p className="font-semibold text-slate-800">{vehicle.year} {vehicle.make} {vehicle.model}</p><p className="text-xs text-slate-400">{vehicle.trim} · {vehicle.type}</p></td><td className="px-5 py-4 font-mono text-xs text-slate-500">{vehicle.vin}</td><td className="px-5 py-4 font-medium text-slate-700">{vehicle.mileage} mi</td><td className="px-5 py-4 text-slate-600">{vehicle.assignment || '—'}</td><td className="px-5 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${statusStyle[vehicle.status]}`}>{vehicle.status}</span></td><td className="px-5 py-4"><div className="flex gap-1"><button aria-label="View vehicle" onClick={()=>openVehicle('view',vehicle)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><Eye className="h-4 w-4"/></button><button aria-label="Edit vehicle" onClick={()=>openVehicle('edit',vehicle)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><Pencil className="h-4 w-4"/></button><button aria-label="Delete vehicle" onClick={()=>void deleteVehicle(vehicle)} className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4"/></button></div></td></tr>)}</tbody></table></div>
           <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">Showing {filteredVehicles.length} of {vehicles.length} vehicles</div>
         </section>
       </div>
 
       {modal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm" onMouseDown={event => { if (event.target === event.currentTarget) closeModal(); }}>
         <div className={`max-h-[92vh] w-full overflow-y-auto rounded-3xl bg-white shadow-2xl ${modal === 'import' ? 'max-w-4xl' : 'max-w-2xl'}`}>
-          <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-200 bg-white px-6 py-5"><div><h2 className="text-xl font-bold text-slate-950">{modal === 'add' ? 'Add a vehicle' : 'Import fleet vehicles'}</h2><p className="mt-1 text-sm text-slate-500">{modal === 'add' ? 'Decode a VIN with NHTSA, then review the details.' : 'Upload a CSV and review every VIN before importing.'}</p></div><button onClick={closeModal} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X className="h-5 w-5" /></button></div>
-          {modal === 'add' ? <div className="p-6">
+          <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-200 bg-white px-6 py-5"><div><h2 className="text-xl font-bold text-slate-950">{modal === 'add' ? 'Add a vehicle' : modal === 'edit' ? 'Edit vehicle' : modal === 'view' ? 'Vehicle details' : 'Import fleet vehicles'}</h2><p className="mt-1 text-sm text-slate-500">{modal === 'import' ? 'Upload a CSV and review every VIN before importing.' : 'Decode a VIN with NHTSA, then review the details.'}</p></div><button onClick={closeModal} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X className="h-5 w-5" /></button></div>
+          {modal === 'view' && selected ? <div className="p-6"><dl className="grid grid-cols-2 gap-5 text-sm"><div><dt className="text-slate-500">Unit</dt><dd className="font-bold">{selected.unit}</dd></div><div><dt className="text-slate-500">VIN</dt><dd className="font-mono">{selected.vin}</dd></div><div><dt className="text-slate-500">Vehicle</dt><dd>{selected.year} {selected.make} {selected.model}</dd></div><div><dt className="text-slate-500">Mileage</dt><dd>{selected.mileage}</dd></div><div><dt className="text-slate-500">Assignment</dt><dd>{selected.assignment||'—'}</dd></div><div><dt className="text-slate-500">Status</dt><dd>{selected.status}</dd></div></dl></div> : modal === 'add' || modal === 'edit' ? <div className="p-6">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Vehicle identification number</label>
             <div className="mt-2 flex gap-2"><input value={draft.vin} onChange={event => updateDraft('vin', event.target.value)} placeholder="Enter 17-character VIN" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3.5 py-3 font-mono text-sm uppercase outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" /><button onClick={decodeVin} disabled={decodeState === 'loading'} className="inline-flex min-w-28 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-50">{decodeState === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}Decode</button></div>
             <p className="mt-2 text-xs text-slate-400">{draft.vin.length}/17 characters · Uses the U.S. Department of Transportation NHTSA vPIC service.</p>
@@ -324,7 +330,7 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
               <Field label="Current mileage" value={draft.mileage} onChange={value => updateDraft('mileage', value)} placeholder="0" />
               <Field label="Assignment" value={draft.assignment} onChange={value => updateDraft('assignment', value)} placeholder="North District" />
             </div>
-            <div className="mt-7 flex justify-end gap-2"><button onClick={closeModal} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancel</button><button onClick={saveVehicle} disabled={importing || !draft.unit || !VIN_PATTERN.test(draft.vin) || !draft.make || !draft.model} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">{importing && <Loader2 className="h-4 w-4 animate-spin" />}Add vehicle</button></div>
+            <div className="mt-7 flex justify-end gap-2"><button onClick={closeModal} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancel</button><button onClick={saveVehicle} disabled={importing || !draft.unit || !VIN_PATTERN.test(draft.vin) || !draft.make || !draft.model} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">{importing && <Loader2 className="h-4 w-4 animate-spin" />}{selected?'Save changes':'Add vehicle'}</button></div>
           </div> : <div className="p-6">
             {!importRows.length ? <button onClick={() => fileInput.current?.click()} className="flex w-full flex-col items-center rounded-2xl border-2 border-dashed border-slate-200 px-6 py-12 text-center hover:border-blue-300 hover:bg-blue-50/30"><span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600"><FileSpreadsheet className="h-6 w-6" /></span><span className="mt-4 font-bold text-slate-900">Choose a CSV file</span><span className="mt-1 text-sm text-slate-500">Required columns: unit, vin. Optional: mileage, assignment.</span><span className="mt-4 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white"><Upload className="h-4 w-4" />Browse files</span></button> : <>
               <div className="flex items-center justify-between"><div><p className="font-bold text-slate-900">Validation preview</p><p className="text-sm text-slate-500">{importRows.filter(row => row.status === 'ready').length} ready · {importRows.filter(row => row.status === 'error').length} need attention</p></div><button onClick={() => { setImportRows([]); fileInput.current?.click(); }} className="text-sm font-semibold text-blue-600">Choose another file</button></div>
