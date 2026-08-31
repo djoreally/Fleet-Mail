@@ -7,6 +7,7 @@ import {
   ArrowRight,
   BarChart3,
   Bell,
+  Bot,
   CalendarDays,
   Check,
   CheckCircle2,
@@ -54,11 +55,22 @@ import {
   Zap,
 } from 'lucide-react';
 
+import { EmailList } from './components/EmailList';
+import { EmailDetail } from './components/EmailDetail';
+import { AIChatView } from './components/AIChatView';
+import { ContactsView } from './components/ContactsView';
+import { ComposeModal } from './components/ComposeModal';
+import { EmailMessage, ChatMessage, Contact } from './types';
+
 // FleetMail design-only prototype: all records and state below are local mock data.
 // There are intentionally no fetch calls, CRUD mutations, database queries, or live workflows.
 
 type PageId =
   | 'inbox'
+  | 'sent'
+  | 'drafts'
+  | 'chat'
+  | 'contacts'
   | 'dashboard'
   | 'vehicles'
   | 'vehicle-detail'
@@ -131,7 +143,16 @@ const technicians = [
 ];
 
 const navGroups = [
-  { label: 'Communication', items: [{ id: 'inbox', label: 'Fleet Inbox', icon: Inbox, count: 3 }] },
+  {
+    label: 'Communication',
+    items: [
+      { id: 'inbox', label: 'Fleet Inbox', icon: Inbox, count: 3 },
+      { id: 'sent', label: 'Sent', icon: Send },
+      { id: 'drafts', label: 'Drafts', icon: FileText },
+      { id: 'chat', label: 'AI Chat', icon: Bot },
+      { id: 'contacts', label: 'Contacts', icon: Users },
+    ],
+  },
   { label: 'Workspace', items: [{ id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }, { id: 'work-orders', label: 'Work orders', icon: ClipboardList, count: 18 }, { id: 'schedule', label: 'Schedule', icon: CalendarDays }, { id: 'dispatch', label: 'Dispatch board', icon: MapPin }] },
   { label: 'Fleet', items: [{ id: 'vehicles', label: 'Vehicles', icon: Truck }, { id: 'maintenance', label: 'Maintenance', icon: Wrench }, { id: 'parts', label: 'Parts & inventory', icon: Package }] },
   { label: 'Business', items: [{ id: 'customers', label: 'Customers & locations', icon: Users }, { id: 'financials', label: 'Estimates & invoices', icon: CreditCard }, { id: 'documents', label: 'Documents', icon: FileText }] },
@@ -362,11 +383,353 @@ function InboxPage({ go }: { go: (page: PageId) => void }) {
   </PageFrame>;
 }
 
+const initialEmails: EmailMessage[] = [
+  {
+    id: 'email-1',
+    from: 'sarah@redwoodlogistics.com',
+    fromName: 'Sarah Jenkins',
+    to: 'fleet@redwood.agentmail.to',
+    subject: 'Urgent: Brake check on TRK-104',
+    text: 'Noticeable pad wear reported on driver shift change at Dallas yard. Please conduct an inspection and WO before 2:30 PM route.',
+    read: false,
+    created_at: '2026-08-31T10:14:00Z',
+    formattedTime: '10:14 AM',
+    actionRequired: 'Inspect brake pads on TRK-104',
+    summary: {
+      tldr: 'Sarah reported noticeable front brake pad wear on TRK-104 at Dallas yard.',
+      actionItems: ['Inspect brake pads on TRK-104 before 2:30 PM'],
+      urgency: 'High',
+      sentiment: 'Urgent',
+      suggestedReplies: ['Acknowledge request', 'Assign technician Marco Ruiz'],
+      keyPoints: ['TRK-104 pad wear', 'Dallas yard location'],
+      generatedAt: '2026-08-31T10:15:00Z',
+      modelUsed: 'Dots-3'
+    }
+  },
+  {
+    id: 'email-2',
+    from: 'mike@atlasbuild.com',
+    fromName: 'Mike Vance',
+    to: 'fleet@redwood.agentmail.to',
+    subject: 'Re: Coolant leak on TRK-118',
+    text: 'Authorized to proceed with cooling pressure test at Tulsa depot. Let us know estimated repair completion time.',
+    read: false,
+    created_at: '2026-08-30T16:20:00Z',
+    formattedTime: 'Yesterday',
+    actionRequired: 'Proceed with pressure test on TRK-118'
+  },
+  {
+    id: 'email-3',
+    from: 'dispatch@northstarfoods.com',
+    fromName: 'Northstar Dispatch',
+    to: 'fleet@redwood.agentmail.to',
+    subject: 'Scheduled PM for VAN-028',
+    text: 'Confirming mobile technician arrival window tomorrow at Austin location for 100K preventive maintenance.',
+    read: true,
+    created_at: '2026-08-29T09:00:00Z',
+    formattedTime: 'Aug 29'
+  }
+];
+
+const initialChatMessages: ChatMessage[] = [
+  {
+    id: 'c-1',
+    role: 'assistant',
+    content: 'Hello Alex! I am your Fleet OS AI Assistant. I can help triage incoming fleet requests, summarize inbox activity, or update service schedules.',
+    timestamp: '10:00 AM',
+    chips: ['Summarize unread inbox', 'Draft authorization update', 'Check vehicle maintenance status']
+  }
+];
+
+const mockContacts: Contact[] = [
+  { id: 'c-101', name: 'Sarah Jenkins', email: 'sarah@redwoodlogistics.com', company: 'Redwood Logistics', role: 'Fleet Manager', phone: '(214) 555-0192' },
+  { id: 'c-102', name: 'Mike Vance', email: 'mike@atlasbuild.com', company: 'Atlas Building Supply', role: 'Operations Supervisor', phone: '(918) 555-0144' },
+  { id: 'c-103', name: 'Dispatch Desk', email: 'dispatch@northstarfoods.com', company: 'Northstar Foods', role: 'Logistics Coordinator', phone: '(512) 555-0811' },
+];
+
 function App() {
-  const [page, setPage] = useState<PageId>('dashboard'); const [mobileNav, setMobileNav] = useState(false); const [selectedVehicle, setSelectedVehicle] = useState<Vehicle>(vehicles[0]); const [commandOpen, setCommandOpen] = useState(false);
+  const [page, setPage] = useState<PageId>('dashboard');
+  const [mobileNav, setMobileNav] = useState(false);
+  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle>(vehicles[0]);
+  const [commandOpen, setCommandOpen] = useState(false);
+
+  // Live Mail & Chat States
+  const [emails, setEmails] = useState<EmailMessage[]>(initialEmails);
+  const [selectedEmail, setSelectedEmail] = useState<EmailMessage | null>(initialEmails[0]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(initialChatMessages);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [isComposeOpen, setIsComposeOpen] = useState(false);
+
   const go = (next: PageId) => { setPage(next); setMobileNav(false); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-  const pageTitle: Record<PageId, string> = { inbox: 'Fleet Inbox', dashboard:'Dashboard', vehicles:'Vehicles', 'vehicle-detail':'Vehicle detail', 'work-orders':'Work orders', inspection:'Inspection & authorization', schedule:'Schedule', dispatch:'Dispatch board', maintenance:'Maintenance', customers:'Customers & locations', parts:'Parts & inventory', financials:'Estimates & invoices', documents:'Documents', team:'Team & technicians', settings:'Tenant settings' };
-  return <div className="flex h-screen w-full overflow-hidden bg-[#f7f9fc] text-slate-900"><aside className={cn('fixed inset-y-0 left-0 z-40 flex w-[258px] shrink-0 -translate-x-full flex-col bg-[#111827] text-slate-300 transition-transform lg:static lg:translate-x-0', mobileNav && 'translate-x-0')}><div className="flex h-[72px] items-center gap-3 border-b border-white/10 px-5"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-950/30"><Truck className="h-5 w-5" /></div><div><p className="text-[15px] font-bold tracking-[-0.02em] text-white">FleetMail</p><p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Fleet OS</p></div><button onClick={() => setMobileNav(false)} className="ml-auto rounded-lg p-1.5 text-slate-400 hover:bg-white/10 lg:hidden"><X className="h-4 w-4" /></button></div><div className="px-3 pt-4"><button onClick={() => go('work-orders')} className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-950/20 transition hover:bg-blue-500"><Plus className="h-4 w-4" /> New work order</button></div><nav className="flex-1 overflow-y-auto px-3 py-5">{navGroups.map(group => <div key={group.label} className="mb-6"><p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{group.label}</p><div className="space-y-0.5">{group.items.map(item => { const Icon = item.icon; const active = page === item.id || (item.id === 'vehicles' && page === 'vehicle-detail') || (item.id === 'work-orders' && page === 'inspection'); return <button key={item.id} onClick={() => go(item.id as PageId)} className={cn('flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition', active ? 'bg-blue-600/15 text-white ring-1 ring-inset ring-blue-500/20' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200')}><Icon className={cn('h-4 w-4', active ? 'text-blue-400' : 'text-slate-500')} /><span className="flex-1">{item.label}</span>{item.count ? <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-bold', item.id === 'inbox' ? 'bg-blue-500/20 text-blue-300' : 'bg-amber-400/15 text-amber-300')}>{item.count}</span> : null}</button>; })}</div></div>)}<div className="mb-6"><p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Admin</p><button onClick={() => go('team')} className={cn('flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition', page === 'team' ? 'bg-blue-600/15 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200')}><Users className="h-4 w-4 text-slate-500" /> Team & technicians</button><button onClick={() => go('settings')} className={cn('mt-0.5 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition', page === 'settings' ? 'bg-blue-600/15 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200')}><Settings2 className="h-4 w-4 text-slate-500" /> Tenant settings</button></div></nav><div className="border-t border-white/10 p-3"><button className="flex w-full items-center gap-3 rounded-lg p-2 text-left hover:bg-white/5"><Avatar initials="AC" color="bg-blue-500/20 text-blue-300" size="sm" /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-bold text-white">Alex Carter</span><span className="mt-0.5 block truncate text-[10px] text-slate-500">Fleet admin · Redwood</span></span><MoreHorizontal className="h-4 w-4 text-slate-500" /></button></div></aside><div className="flex min-w-0 flex-1 flex-col"><header className="flex h-[72px] shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 sm:px-6"><button onClick={() => setMobileNav(true)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden"><Menu className="h-5 w-5" /></button><div className="min-w-0 flex-1"><p className="truncate text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Fleet OS / <span className="text-blue-600">{pageTitle[page]}</span></p><h2 className="mt-1 truncate text-sm font-bold text-slate-900">Operations command center</h2></div><button onClick={() => setCommandOpen(true)} className="hidden items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500 shadow-sm hover:bg-slate-50 md:flex"><Command className="h-3.5 w-3.5" /> Quick actions <kbd className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-400">⌘K</kbd></button><button className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100"><Bell className="h-4 w-4" /><span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-rose-500 ring-2 ring-white" /></button><button onClick={() => go('settings')} className="hidden h-9 w-9 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700 sm:flex">AC</button></header>{page === 'inbox' && <InboxPage go={go} />}{page === 'dashboard' && <Dashboard go={go} />}{page === 'vehicles' && <VehiclesPage go={go} openVehicle={vehicle => { setSelectedVehicle(vehicle); go('vehicle-detail'); }} />}{page === 'vehicle-detail' && <VehicleDetail vehicle={selectedVehicle} go={go} />}{page === 'work-orders' && <WorkOrdersPage go={go} />}{page === 'inspection' && <InspectionPage go={go} />}{page === 'schedule' && <SchedulePage go={go} />}{page === 'dispatch' && <DispatchPage />}{page === 'maintenance' && <MaintenancePage go={go} />}{page === 'customers' && <CustomersPage go={go} />}{page === 'parts' && <PartsPage />}{page === 'financials' && <FinancialsPage go={go} />}{page === 'documents' && <DocumentsPage />}{page === 'team' && <TeamPage />}{page === 'settings' && <SettingsPage />}</div>{commandOpen && <Drawer title="Quick actions" subtitle="Navigate prototype screens without leaving your workflow" onClose={() => setCommandOpen(false)}><div className="space-y-2">{[['inbox','Open Fleet Inbox',Inbox],['dashboard','Open dashboard',LayoutDashboard],['vehicles','Find a vehicle',Truck],['work-orders','Review work orders',ClipboardList],['schedule','Book service',CalendarDays],['inspection','Review authorization',ShieldCheck],['settings','Configure AgentMail',Sparkles]].map(([id,label,Icon]) => <button key={id as string} onClick={() => { setCommandOpen(false); go(id as PageId); }} className="flex w-full items-center gap-3 rounded-lg border border-slate-200 p-3 text-left hover:border-blue-300 hover:bg-blue-50/40"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><Icon className="h-4 w-4" /></span><span className="flex-1 text-sm font-semibold text-slate-800">{label as string}</span><ChevronRight className="h-4 w-4 text-slate-300" /></button>)}</div></Drawer>}</div>;
+
+  const handleSelectEmail = (msg: EmailMessage) => {
+    setSelectedEmail(msg);
+    setEmails(prev => prev.map(e => e.id === msg.id ? { ...e, read: true } : e));
+  };
+
+  const handleSendChatMessage = (text: string) => {
+    const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: 'user', content: text, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) };
+    setChatMessages(prev => [...prev, userMsg]);
+    setChatLoading(true);
+
+    setTimeout(() => {
+      setChatLoading(false);
+      let replyText = `I analyzed "${text}". All fleet operations and AgentMail connections are operational.`;
+      if (text.toLowerCase().includes('summarize')) {
+        replyText = `You have 2 unread inbox requests:\n1. Sarah Jenkins (Redwood Logistics) regarding TRK-104 brake pads\n2. Mike Vance (Atlas Building Supply) authorizing TRK-118 coolant pressure test.`;
+      }
+      const assistantMsg: ChatMessage = {
+        id: `a-${Date.now()}`,
+        role: 'assistant',
+        content: replyText,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        chips: ['Review WO-2481', 'Open Work Orders queue']
+      };
+      setChatMessages(prev => [...prev, assistantMsg]);
+    }, 800);
+  };
+
+  const pageTitle: Record<PageId, string> = {
+    inbox: 'Fleet Inbox',
+    sent: 'Sent Messages',
+    drafts: 'Drafts',
+    chat: 'AI Operations Assistant',
+    contacts: 'Contacts',
+    dashboard: 'Dashboard',
+    vehicles: 'Vehicles',
+    'vehicle-detail': 'Vehicle detail',
+    'work-orders': 'Work orders',
+    inspection: 'Inspection & authorization',
+    schedule: 'Schedule',
+    dispatch: 'Dispatch board',
+    maintenance: 'Maintenance',
+    customers: 'Customers & locations',
+    parts: 'Parts & inventory',
+    financials: 'Estimates & invoices',
+    documents: 'Documents',
+    team: 'Team & technicians',
+    settings: 'Tenant settings'
+  };
+
+  const filteredEmails = useMemo(() => {
+    if (page === 'sent') return emails.filter(e => e.from.includes('operator') || e.from.includes('redwood'));
+    if (page === 'drafts') return [];
+    return emails;
+  }, [page, emails]);
+
+  return <div className="flex h-screen w-full overflow-hidden bg-[#f7f9fc] text-slate-900">
+    {/* Dark Navigation Sidebar */}
+    <aside className={cn('fixed inset-y-0 left-0 z-40 flex w-[258px] shrink-0 -translate-x-full flex-col bg-[#111827] text-slate-300 transition-transform lg:static lg:translate-x-0', mobileNav && 'translate-x-0')}>
+      <div className="flex h-[72px] items-center gap-3 border-b border-white/10 px-5">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-950/30">
+          <Truck className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-[15px] font-bold tracking-[-0.02em] text-white">FleetMail</p>
+          <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Fleet OS</p>
+        </div>
+        <button onClick={() => setMobileNav(false)} className="ml-auto rounded-lg p-1.5 text-slate-400 hover:bg-white/10 lg:hidden">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="px-3 pt-4 space-y-2">
+        <button onClick={() => setIsComposeOpen(true)} className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-950/20 transition hover:bg-blue-500">
+          <PenLine className="h-4 w-4" /> Compose message
+        </button>
+      </div>
+
+      <nav className="flex-1 overflow-y-auto px-3 py-5">
+        {navGroups.map(group => (
+          <div key={group.label} className="mb-6">
+            <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{group.label}</p>
+            <div className="space-y-0.5">
+              {group.items.map(item => {
+                const Icon = item.icon;
+                const active = page === item.id || (item.id === 'vehicles' && page === 'vehicle-detail') || (item.id === 'work-orders' && page === 'inspection');
+                const countVal = item.id === 'inbox' ? emails.filter(e => !e.read).length : item.count;
+                return (
+                  <button key={item.id} onClick={() => go(item.id as PageId)} className={cn('flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition', active ? 'bg-blue-600/15 text-white ring-1 ring-inset ring-blue-500/20' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200')}>
+                    <Icon className={cn('h-4 w-4', active ? 'text-blue-400' : 'text-slate-500')} />
+                    <span className="flex-1">{item.label}</span>
+                    {countVal && countVal > 0 ? (
+                      <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-bold', item.id === 'inbox' ? 'bg-blue-500/20 text-blue-300' : 'bg-amber-400/15 text-amber-300')}>
+                        {countVal}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        <div className="mb-6">
+          <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Admin</p>
+          <button onClick={() => go('team')} className={cn('flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition', page === 'team' ? 'bg-blue-600/15 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200')}>
+            <Users className="h-4 w-4 text-slate-500" /> Team & technicians
+          </button>
+          <button onClick={() => go('settings')} className={cn('mt-0.5 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition', page === 'settings' ? 'bg-blue-600/15 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200')}>
+            <Settings2 className="h-4 w-4 text-slate-500" /> Tenant settings
+          </button>
+        </div>
+      </nav>
+
+      <div className="border-t border-white/10 p-3">
+        <button className="flex w-full items-center gap-3 rounded-lg p-2 text-left hover:bg-white/5">
+          <Avatar initials="AC" color="bg-blue-500/20 text-blue-300" size="sm" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-xs font-bold text-white">Alex Carter</span>
+            <span className="mt-0.5 block truncate text-[10px] text-slate-500">Fleet admin · Redwood</span>
+          </span>
+          <MoreHorizontal className="h-4 w-4 text-slate-500" />
+        </button>
+      </div>
+    </aside>
+
+    {/* Main Operational Workspace */}
+    <div className="flex min-w-0 flex-1 flex-col">
+      <header className="flex h-[72px] shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 sm:px-6">
+        <button onClick={() => setMobileNav(true)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden">
+          <Menu className="h-5 w-5" />
+        </button>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Fleet OS / <span className="text-blue-600">{pageTitle[page]}</span></p>
+          <h2 className="mt-1 truncate text-sm font-bold text-slate-900">Operations command center</h2>
+        </div>
+        <button onClick={() => setCommandOpen(true)} className="hidden items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500 shadow-sm hover:bg-slate-50 md:flex">
+          <Command className="h-3.5 w-3.5" /> Quick actions <kbd className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-400">⌘K</kbd>
+        </button>
+        <button className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100">
+          <Bell className="h-4 w-4" />
+          <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-rose-500 ring-2 ring-white" />
+        </button>
+        <button onClick={() => go('settings')} className="hidden h-9 w-9 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700 sm:flex">AC</button>
+      </header>
+
+      {/* Live Email Inbox Views */}
+      {(page === 'inbox' || page === 'sent' || page === 'drafts') && (
+        <div className="flex flex-1 overflow-hidden">
+          <EmailList
+            emails={filteredEmails}
+            selectedEmailId={selectedEmail?.id || null}
+            onSelectEmail={handleSelectEmail}
+            folderTitle={page === 'sent' ? 'Sent Mail' : page === 'drafts' ? 'Drafts' : 'Fleet Inbox'}
+            activeInbox="fleet@redwood.agentmail.to"
+          />
+          <EmailDetail
+            email={selectedEmail}
+            onSendReply={async (text, to, subject) => {
+              const replyMsg: EmailMessage = {
+                id: `sent-${Date.now()}`,
+                from: 'operator@fleetos.app',
+                fromName: 'Alex Carter',
+                to,
+                subject,
+                text,
+                read: true,
+                created_at: new Date().toISOString(),
+                formattedTime: 'Just now'
+              };
+              setEmails(prev => [replyMsg, ...prev]);
+              return true;
+            }}
+            onAskAIAboutEmail={(email) => go('chat')}
+          />
+        </div>
+      )}
+
+      {/* Live AI Chat View */}
+      {page === 'chat' && (
+        <AIChatView
+          messages={chatMessages}
+          onSendMessage={handleSendChatMessage}
+          isLoading={chatLoading}
+          onSendAndScheduleDraft={(draft) => {
+            setIsComposeOpen(true);
+          }}
+        />
+      )}
+
+      {/* Live Contacts View */}
+      {page === 'contacts' && (
+        <ContactsView
+          contacts={mockContacts}
+          emails={emails}
+          onAddContact={async (c) => true}
+          onUpdateContact={async (id, updates) => true}
+          onDeleteContact={async (id) => true}
+          onExtractFromInbox={async () => 0}
+          onComposeTo={(email) => setIsComposeOpen(true)}
+          onAskAIAboutContact={(contact) => go('chat')}
+        />
+      )}
+
+      {/* Prototype Workspace Views */}
+      {page === 'dashboard' && <Dashboard go={go} />}
+      {page === 'vehicles' && <VehiclesPage go={go} openVehicle={vehicle => { setSelectedVehicle(vehicle); go('vehicle-detail'); }} />}
+      {page === 'vehicle-detail' && <VehicleDetail vehicle={selectedVehicle} go={go} />}
+      {page === 'work-orders' && <WorkOrdersPage go={go} />}
+      {page === 'inspection' && <InspectionPage go={go} />}
+      {page === 'schedule' && <SchedulePage go={go} />}
+      {page === 'dispatch' && <DispatchPage />}
+      {page === 'maintenance' && <MaintenancePage go={go} />}
+      {page === 'customers' && <CustomersPage go={go} />}
+      {page === 'parts' && <PartsPage />}
+      {page === 'financials' && <FinancialsPage go={go} />}
+      {page === 'documents' && <DocumentsPage />}
+      {page === 'team' && <TeamPage />}
+      {page === 'settings' && <SettingsPage />}
+    </div>
+
+    {/* Compose Modal */}
+    {isComposeOpen && (
+      <ComposeModal
+        isOpen={isComposeOpen}
+        onClose={() => setIsComposeOpen(false)}
+        activeInbox="fleet@redwood.agentmail.to"
+        onSendEmail={async (payload) => {
+          const newEmail: EmailMessage = {
+            id: `sent-${Date.now()}`,
+            from: 'operator@fleetos.app',
+            fromName: 'Alex Carter',
+            to: payload.to,
+            subject: payload.subject,
+            text: payload.body,
+            read: true,
+            created_at: new Date().toISOString(),
+            formattedTime: 'Just now'
+          };
+          setEmails(prev => [newEmail, ...prev]);
+          setSelectedEmail(newEmail);
+          return true;
+        }}
+      />
+    )}
+
+    {/* Command Bar Quick Actions */}
+    {commandOpen && <Drawer title="Quick actions" subtitle="Navigate prototype screens without leaving your workflow" onClose={() => setCommandOpen(false)}>
+      <div className="space-y-2">
+        {[
+          ['inbox', 'Open Fleet Inbox', Inbox],
+          ['chat', 'Open AI Assistant', Bot],
+          ['dashboard', 'Open dashboard', LayoutDashboard],
+          ['vehicles', 'Find a vehicle', Truck],
+          ['work-orders', 'Review work orders', ClipboardList],
+          ['schedule', 'Book service', CalendarDays],
+          ['inspection', 'Review authorization', ShieldCheck],
+          ['settings', 'Configure AgentMail', Sparkles]
+        ].map(([id, label, Icon]) => (
+          <button key={id as string} onClick={() => { setCommandOpen(false); go(id as PageId); }} className="flex w-full items-center gap-3 rounded-lg border border-slate-200 p-3 text-left hover:border-blue-300 hover:bg-blue-50/40">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+              <Icon className="h-4 w-4" />
+            </span>
+            <span className="flex-1 text-sm font-semibold text-slate-800">{label as string}</span>
+            <ChevronRight className="h-4 w-4 text-slate-300" />
+          </button>
+        ))}
+      </div>
+    </Drawer>}
+  </div>;
 }
 
 export default App;
