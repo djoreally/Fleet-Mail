@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Header } from './components/Header';
-import { Sidebar } from './components/Sidebar';
+import { Sidebar, AppTab } from './components/Sidebar';
+import { FleetModuleView, FleetModuleId } from './components/FleetModuleView';
 import { EmailList } from './components/EmailList';
 import { EmailDetail } from './components/EmailDetail';
 import { ContactsView } from './components/ContactsView';
@@ -20,7 +21,7 @@ import {
 
 export default function App() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
-  const [currentTab, setCurrentTab] = useState<'inbox' | 'sent' | 'drafts' | 'contacts' | 'chat' | 'settings'>('inbox');
+  const [currentTab, setCurrentTab] = useState<AppTab>('inbox');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeInbox, setActiveInbox] = useState<string>('moms@agentmail.to');
   const [emails, setEmails] = useState<EmailMessage[]>([]);
@@ -67,9 +68,9 @@ export default function App() {
     {
       id: 'msg_welcome_ai',
       role: 'assistant',
-      content: `Good morning! I'm your AI Email Copilot powered by AtlasCloud Dots-3 and AgentMail. I am actively monitoring **${activeInbox}**. You can ask me to draft emails, summarize threads, or search your inbox.`,
+      content: `Good morning! I'm your Fleet OS copilot powered by AtlasCloud Dots-3 and AgentMail. I am actively monitoring **${activeInbox}**. You can ask me to summarize fleet requests, identify action items, or draft a response.`,
       timestamp: new Date().toISOString(),
-      chips: ['Summarize Inbox', 'Draft New Email', 'Check Urgent Tasks']
+      chips: ['Summarize Fleet Inbox', 'Draft Fleet Response', 'Check Urgent Requests']
     }
   ]);
   const [isChatLoading, setIsChatLoading] = useState<boolean>(false);
@@ -494,6 +495,10 @@ export default function App() {
               onSaveSettings={(newSettings) => setSettings(newSettings)}
               onCancel={() => setCurrentTab('inbox')}
             />
+          )}
+
+          {(['vehicles', 'work-orders', 'maintenance', 'schedule', 'dispatch', 'parts', 'customers', 'financials', 'documents'] as FleetModuleId[]).includes(currentTab as FleetModuleId) && (
+            <FleetModuleView module={currentTab as FleetModuleId} onOpenInbox={() => setCurrentTab('inbox')} />
           )}
         </div>
       </div>

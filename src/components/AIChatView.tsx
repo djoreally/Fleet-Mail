@@ -168,7 +168,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({
             </div>
             <div className="bg-white border border-slate-200 rounded-2xl p-4 text-xs text-slate-500 flex items-center gap-2 shadow-xs">
               <span className="w-2 h-2 rounded-full bg-[#0b57d0] animate-ping"></span>
-              <span>Thinking and drafting with Active Intelligence...</span>
+              <span>Fleet OS is analyzing the request...</span>
             </div>
           </div>
         )}
@@ -181,7 +181,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({
         {/* Quick Suggestion Chips */}
         <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => handleChipClick('Draft an email to the client about our upcoming release schedule')}
+            onClick={() => handleChipClick('Draft a fleet service scheduling update for the customer')}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
           >
             <FileText className="w-3.5 h-3.5 text-slate-500" />

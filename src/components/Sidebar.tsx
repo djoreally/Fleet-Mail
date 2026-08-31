@@ -6,14 +6,24 @@ import {
   Bot,
   Users,
   Settings,
-  Plus,
   PenSquare,
-  Sparkles
+  Car,
+  ClipboardList,
+  Wrench,
+  CalendarClock,
+  PackageSearch,
+  Building2,
+  BadgeDollarSign,
+  Files
 } from 'lucide-react';
 
+export type AppTab = 'inbox' | 'sent' | 'drafts' | 'contacts' | 'chat' | 'settings'
+  | 'vehicles' | 'work-orders' | 'maintenance' | 'dispatch' | 'parts' | 'customers'
+  | 'schedule' | 'financials' | 'documents';
+
 interface SidebarProps {
-  currentTab: 'inbox' | 'sent' | 'drafts' | 'contacts' | 'chat' | 'settings';
-  onSelectTab: (tab: 'inbox' | 'sent' | 'drafts' | 'contacts' | 'chat' | 'settings') => void;
+  currentTab: AppTab;
+  onSelectTab: (tab: AppTab) => void;
   inboxCount: number;
   sentCount: number;
   draftsCount: number;
@@ -32,19 +42,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
   draftsCount,
   contactsCount = 0,
   onOpenCompose,
-  userEmail = 'alex@aimail.com',
+  userEmail = 'operator@fleetos.app',
   userName = 'Alex Carter',
   userAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
 }) => {
-  const navItems: Array<{
-    id: 'inbox' | 'sent' | 'drafts' | 'contacts' | 'chat';
+  const mailItems: Array<{
+    id: AppTab;
     label: string;
     icon: React.ReactNode;
     count?: number;
   }> = [
     {
       id: 'inbox',
-      label: 'Inbox',
+      label: 'Fleet Inbox',
       icon: <Inbox className="w-4 h-4" />,
       count: inboxCount
     },
@@ -73,21 +83,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   ];
 
+  const fleetItems: Array<{ id: AppTab; label: string; icon: React.ReactNode }> = [
+    { id: 'vehicles', label: 'Vehicles', icon: <Car className="w-4 h-4" /> },
+    { id: 'work-orders', label: 'Work Orders', icon: <ClipboardList className="w-4 h-4" /> },
+    { id: 'maintenance', label: 'Maintenance', icon: <Wrench className="w-4 h-4" /> },
+    { id: 'schedule', label: 'Schedule', icon: <CalendarClock className="w-4 h-4" /> },
+    { id: 'dispatch', label: 'Dispatch', icon: <CalendarClock className="w-4 h-4" /> },
+    { id: 'parts', label: 'Parts', icon: <PackageSearch className="w-4 h-4" /> },
+    { id: 'customers', label: 'Customers', icon: <Building2 className="w-4 h-4" /> },
+    { id: 'financials', label: 'Invoices & Financials', icon: <BadgeDollarSign className="w-4 h-4" /> },
+    { id: 'documents', label: 'Documents', icon: <Files className="w-4 h-4" /> }
+  ];
+
   return (
-    <aside id="app-sidebar" className="w-60 md:w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 h-full select-none">
+    <aside id="app-sidebar" className="w-60 md:w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 h-full select-none overflow-hidden">
       {/* Top Section */}
-      <div className="p-4 space-y-5">
+      <div className="p-4 space-y-5 overflow-y-auto">
         {/* Brand */}
         <div className="flex items-center gap-3 px-1">
           <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center border border-blue-100 shadow-sm text-blue-600">
-            <Bot className="w-5 h-5" />
+            <Wrench className="w-5 h-5" />
           </div>
           <div>
             <h1 className="text-base font-bold tracking-tight text-slate-900 leading-none">
-              AI Mail
+              Fleet OS
             </h1>
             <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Active Intelligence
+              Operations Command Center
             </p>
           </div>
         </div>
@@ -104,7 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Main Navigation */}
         <nav className="space-y-1">
-          {navItems.map((item) => {
+          {mailItems.map((item) => {
             const isActive = currentTab === item.id;
             return (
               <button
@@ -134,6 +156,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {item.count}
                   </span>
                 )}
+              </button>
+            );
+          })}
+        </nav>
+
+        <nav className="space-y-1" aria-label="Fleet operations">
+          <p className="px-3.5 pb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Operations</p>
+          {fleetItems.map((item) => {
+            const isActive = currentTab === item.id;
+            return (
+              <button key={item.id} id={`nav-${item.id}`} onClick={() => onSelectTab(item.id)}
+                className={`w-full flex items-center gap-3 px-3.5 py-2 rounded-xl text-sm font-medium transition-colors ${isActive ? 'bg-[#e8f0fe] text-[#0b57d0] font-semibold' : 'text-slate-700 hover:bg-slate-100/80'}`}>
+                <span className={isActive ? 'text-[#0b57d0]' : 'text-slate-600'}>{item.icon}</span>
+                <span>{item.label}</span>
               </button>
             );
           })}

@@ -1,16 +1,7 @@
-import { neon, neonConfig, Pool } from '@neondatabase/serverless';
+import { neon, Pool } from '@neondatabase/serverless';
 import { drizzle as drizzleServerless } from 'drizzle-orm/neon-serverless';
 import { drizzle as drizzleHttp } from 'drizzle-orm/neon-http';
 import * as schema from './drizzleSchema';
-
-// Configure WebSocket connection behavior for Neon Serverless if needed in Node.js
-if (typeof ws === 'undefined' && typeof process !== 'undefined') {
-  try {
-    // ws is handled automatically in Neon serverless
-  } catch (e) {
-    // ignore
-  }
-}
 
 let dbInstance: ReturnType<typeof drizzleHttp> | ReturnType<typeof drizzleServerless> | null = null;
 

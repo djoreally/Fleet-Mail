@@ -64,23 +64,13 @@ export function createAuthenticatedNeonClient(customToken?: string) {
   const dataApiUrl =
     (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.VITE_NEON_DATA_API_URL) ||
     DEFAULT_NEON_DATA_API_URL;
-  const authUrl =
-    (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.VITE_NEON_AUTH_URL) ||
-    DEFAULT_NEON_AUTH_URL;
-
-  // Initialize the base client
+  // This wrapper uses the existing Fleet OS session as an external identity
+  // provider. Neon calls getToken for each Data API request, so credentials are
+  // never baked into a shared client or exposed through static headers.
   const client = createClient({
-    auth: {
-      url: authUrl,
-      allowAnonymous: true,
-    },
     dataApi: {
       url: dataApiUrl,
-      headers: token
-        ? {
-            Authorization: `Bearer ${token}`,
-          }
-        : undefined,
+      getToken: async () => customToken || getActiveNeonAuthSession().token || '',
     },
   });
 

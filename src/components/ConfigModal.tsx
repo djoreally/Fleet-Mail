@@ -113,7 +113,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
         <div className="p-4 border-t border-slate-200 bg-slate-50/60 flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-xs text-slate-500">
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>AI Mail Workspace Secure</span>
+            <span>Fleet OS Workspace Secure</span>
           </div>
           <button
             onClick={onClose}

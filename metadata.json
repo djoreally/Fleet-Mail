@@ -1,7 +1,6 @@
 {
-  "name": "AI Mail",
-  "description": "Active Intelligence email client with AI-powered summarization, tone analysis, smart drafts, and conversational email assistant.",
+  "name": "Fleet OS",
+  "description": "Multitenant fleet operations command center with an AI-powered inbox, vehicle records, work orders, maintenance, dispatch, parts, financials, and documents.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
-

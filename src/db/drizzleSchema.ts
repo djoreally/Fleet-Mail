@@ -1,167 +1,52 @@
-import { pgTable, text, boolean, timestamp, jsonb, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, boolean, integer, numeric, timestamp, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
-// ============================================================================
-// 1. Users Table - User profiles, authentication bindings, and preferences
-// ============================================================================
-export const users = pgTable(
-  'users',
-  {
-    id: text('id')
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    email: text('email').notNull().unique(),
-    name: text('name').notNull(),
-    avatarUrl: text('avatar_url'),
-    personalityFocus: text('personality_focus').default('Professional').notNull(),
-    importantEmailsOnly: boolean('important_emails_only').default(true).notNull(),
-    dailyAiDigest: boolean('daily_ai_digest').default(true).notNull(),
-    connectedAccounts: jsonb('connected_accounts').default(sql`'[]'::jsonb`),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_users_email').on(table.email),
-    index('idx_users_created_at').on(table.createdAt),
-  ]
-);
+const pk = () => text('id').primaryKey().$defaultFn(() => crypto.randomUUID());
+const created = () => timestamp('created_at', { withTimezone: true }).defaultNow().notNull();
+const updated = () => timestamp('updated_at', { withTimezone: true }).defaultNow().notNull();
+const org = () => text('organization_id').notNull().references(() => organizations.id, { onDelete: 'cascade' });
 
-export type User = typeof users.$inferSelect;
-export type NewUser = typeof users.$inferInsert;
+export const organizations = pgTable('organizations',{id:pk(),name:text('name').notNull(),slug:text('slug').notNull(),status:text('status').default('active').notNull(),createdAt:created(),updatedAt:updated()},t=>[uniqueIndex('organizations_slug_uq').on(t.slug)]);
+export const users = pgTable('users',{id:pk(),authSubject:text('auth_subject').notNull(),email:text('email').notNull(),name:text('name').notNull(),avatarUrl:text('avatar_url'),createdAt:created(),updatedAt:updated()},t=>[uniqueIndex('users_auth_subject_uq').on(t.authSubject),uniqueIndex('users_email_uq').on(t.email)]);
+export const organizationMemberships=pgTable('organization_memberships',{id:pk(),organizationId:org(),userId:text('user_id').notNull().references(()=>users.id,{onDelete:'cascade'}),role:text('role').default('member').notNull(),status:text('status').default('active').notNull(),createdAt:created()},t=>[uniqueIndex('memberships_org_user_uq').on(t.organizationId,t.userId),index('memberships_user_idx').on(t.userId)]);
+export const agentmailPods=pgTable('agentmail_pods',{id:pk(),organizationId:org(),externalPodId:text('external_pod_id').notNull(),clientId:text('client_id').notNull(),podKeySecretRef:text('pod_key_secret_ref'),status:text('status').default('active').notNull(),createdAt:created(),updatedAt:updated()},t=>[uniqueIndex('agentmail_pods_org_uq').on(t.organizationId),uniqueIndex('agentmail_pods_external_uq').on(t.externalPodId)]);
+export const inboxes=pgTable('inboxes',{id:pk(),organizationId:org(),podId:text('pod_id').references(()=>agentmailPods.id,{onDelete:'cascade'}),externalInboxId:text('external_inbox_id'),email:text('email').notNull(),name:text('name').notNull(),provider:text('provider').default('agentmail').notNull(),keySecretRef:text('key_secret_ref'),isActive:boolean('is_active').default(true).notNull(),createdAt:created(),updatedAt:updated()},t=>[uniqueIndex('inboxes_org_email_uq').on(t.organizationId,t.email),index('inboxes_org_idx').on(t.organizationId)]);
+export const agentmailWebhooks=pgTable('agentmail_webhooks',{id:pk(),organizationId:org(),podId:text('pod_id').references(()=>agentmailPods.id,{onDelete:'cascade'}),inboxId:text('inbox_id').references(()=>inboxes.id,{onDelete:'cascade'}),externalWebhookId:text('external_webhook_id').notNull(),signingSecretRef:text('signing_secret_ref'),eventTypes:text('event_types').array().default(sql`'{}'::text[]`).notNull(),status:text('status').default('active').notNull(),createdAt:created()},t=>[index('webhooks_org_idx').on(t.organizationId)]);
 
-// ============================================================================
-// 2. Inboxes Table - Connected AgentMail, Google, or Custom inboxes
-// ============================================================================
-export const inboxes = pgTable(
-  'inboxes',
-  {
-    id: text('id')
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
-    email: text('email').notNull().unique(),
-    name: text('name').notNull(),
-    provider: text('provider').default('agentmail').notNull(),
-    isActive: boolean('is_active').default(true).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_inboxes_user_id').on(table.userId),
-    index('idx_inboxes_email').on(table.email),
-  ]
-);
+export const customers=pgTable('customers',{id:pk(),organizationId:org(),name:text('name').notNull(),accountNumber:text('account_number'),billingEmail:text('billing_email'),phone:text('phone'),status:text('status').default('active').notNull(),notes:text('notes'),createdAt:created(),updatedAt:updated()},t=>[index('customers_org_name_idx').on(t.organizationId,t.name)]);
+export const contacts=pgTable('contacts',{id:pk(),organizationId:org(),customerId:text('customer_id').references(()=>customers.id,{onDelete:'cascade'}),name:text('name').notNull(),email:text('email'),phone:text('phone'),role:text('role'),isPrimary:boolean('is_primary').default(false).notNull(),tags:text('tags').array().default(sql`'{}'::text[]`).notNull(),notes:text('notes'),createdAt:created(),updatedAt:updated()},t=>[index('contacts_org_customer_idx').on(t.organizationId,t.customerId),index('contacts_org_email_idx').on(t.organizationId,t.email)]);
+export const locations=pgTable('locations',{id:pk(),organizationId:org(),customerId:text('customer_id').references(()=>customers.id,{onDelete:'cascade'}),name:text('name').notNull(),address1:text('address1').notNull(),address2:text('address2'),city:text('city').notNull(),region:text('region').notNull(),postalCode:text('postal_code').notNull(),latitude:numeric('latitude'),longitude:numeric('longitude'),createdAt:created(),updatedAt:updated()},t=>[index('locations_org_customer_idx').on(t.organizationId,t.customerId)]);
+export const vehicles=pgTable('vehicles',{id:pk(),organizationId:org(),customerId:text('customer_id').references(()=>customers.id,{onDelete:'restrict'}),locationId:text('location_id').references(()=>locations.id,{onDelete:'set null'}),unitNumber:text('unit_number').notNull(),vin:text('vin'),year:integer('year'),make:text('make'),model:text('model'),engine:text('engine'),mileage:integer('mileage'),status:text('status').default('active').notNull(),metadata:jsonb('metadata').default(sql`'{}'::jsonb`).notNull(),createdAt:created(),updatedAt:updated()},t=>[uniqueIndex('vehicles_org_unit_uq').on(t.organizationId,t.unitNumber),index('vehicles_org_vin_idx').on(t.organizationId,t.vin),index('vehicles_org_customer_idx').on(t.organizationId,t.customerId)]);
+export const technicians=pgTable('technicians',{id:pk(),organizationId:org(),userId:text('user_id').references(()=>users.id,{onDelete:'set null'}),name:text('name').notNull(),phone:text('phone'),skills:text('skills').array().default(sql`'{}'::text[]`).notNull(),active:boolean('active').default(true).notNull(),createdAt:created()},t=>[index('technicians_org_idx').on(t.organizationId)]);
+export const resources=pgTable('resources',{id:pk(),organizationId:org(),name:text('name').notNull(),kind:text('kind').notNull(),capacity:integer('capacity').default(1).notNull(),active:boolean('active').default(true).notNull(),createdAt:created()},t=>[index('resources_org_kind_idx').on(t.organizationId,t.kind)]);
+export const availability=pgTable('availability',{id:pk(),organizationId:org(),technicianId:text('technician_id').references(()=>technicians.id,{onDelete:'cascade'}),resourceId:text('resource_id').references(()=>resources.id,{onDelete:'cascade'}),startsAt:timestamp('starts_at',{withTimezone:true}).notNull(),endsAt:timestamp('ends_at',{withTimezone:true}).notNull(),status:text('status').default('available').notNull()},t=>[index('availability_org_time_idx').on(t.organizationId,t.startsAt,t.endsAt)]);
 
-export type Inbox = typeof inboxes.$inferSelect;
-export type NewInbox = typeof inboxes.$inferInsert;
+export const workOrders=pgTable('work_orders',{id:pk(),organizationId:org(),customerId:text('customer_id').references(()=>customers.id,{onDelete:'restrict'}),vehicleId:text('vehicle_id').references(()=>vehicles.id,{onDelete:'restrict'}),locationId:text('location_id').references(()=>locations.id,{onDelete:'set null'}),number:text('number').notNull(),status:text('status').default('draft').notNull(),priority:text('priority').default('normal').notNull(),complaint:text('complaint'),diagnosis:text('diagnosis'),completedAt:timestamp('completed_at',{withTimezone:true}),createdBy:text('created_by').references(()=>users.id,{onDelete:'set null'}),createdAt:created(),updatedAt:updated()},t=>[uniqueIndex('work_orders_org_number_uq').on(t.organizationId,t.number),index('work_orders_org_status_idx').on(t.organizationId,t.status),index('work_orders_org_vehicle_idx').on(t.organizationId,t.vehicleId)]);
+export const appointments=pgTable('appointments',{id:pk(),organizationId:org(),workOrderId:text('work_order_id').references(()=>workOrders.id,{onDelete:'set null'}),customerId:text('customer_id').references(()=>customers.id,{onDelete:'restrict'}),vehicleId:text('vehicle_id').references(()=>vehicles.id,{onDelete:'restrict'}),locationId:text('location_id').references(()=>locations.id,{onDelete:'set null'}),status:text('status').default('scheduled').notNull(),startsAt:timestamp('starts_at',{withTimezone:true}).notNull(),endsAt:timestamp('ends_at',{withTimezone:true}).notNull(),recurrenceRule:text('recurrence_rule'),recurrenceParentId:text('recurrence_parent_id'),notes:text('notes'),createdAt:created(),updatedAt:updated()},t=>[index('appointments_org_time_idx').on(t.organizationId,t.startsAt),index('appointments_org_status_idx').on(t.organizationId,t.status)]);
+export const dispatchAssignments=pgTable('dispatch_assignments',{id:pk(),organizationId:org(),workOrderId:text('work_order_id').notNull().references(()=>workOrders.id,{onDelete:'cascade'}),appointmentId:text('appointment_id').references(()=>appointments.id,{onDelete:'set null'}),technicianId:text('technician_id').notNull().references(()=>technicians.id,{onDelete:'restrict'}),resourceId:text('resource_id').references(()=>resources.id,{onDelete:'set null'}),status:text('status').default('assigned').notNull(),startsAt:timestamp('starts_at',{withTimezone:true}),arrivedAt:timestamp('arrived_at',{withTimezone:true}),completedAt:timestamp('completed_at',{withTimezone:true}),createdAt:created()},t=>[index('dispatch_org_tech_idx').on(t.organizationId,t.technicianId),index('dispatch_org_wo_idx').on(t.organizationId,t.workOrderId)]);
+export const dispatchStatusHistory=pgTable('dispatch_status_history',{id:pk(),organizationId:org(),assignmentId:text('assignment_id').notNull().references(()=>dispatchAssignments.id,{onDelete:'cascade'}),status:text('status').notNull(),actorUserId:text('actor_user_id').references(()=>users.id,{onDelete:'set null'}),notes:text('notes'),occurredAt:timestamp('occurred_at',{withTimezone:true}).defaultNow().notNull()},t=>[index('dispatch_history_org_assignment_idx').on(t.organizationId,t.assignmentId,t.occurredAt)]);
+export const inspections=pgTable('inspections',{id:pk(),organizationId:org(),workOrderId:text('work_order_id').notNull().references(()=>workOrders.id,{onDelete:'cascade'}),inspectorUserId:text('inspector_user_id').references(()=>users.id,{onDelete:'set null'}),status:text('status').default('in_progress').notNull(),odometer:integer('odometer'),results:jsonb('results').default(sql`'{}'::jsonb`).notNull(),completedAt:timestamp('completed_at',{withTimezone:true}),createdAt:created()},t=>[index('inspections_org_wo_idx').on(t.organizationId,t.workOrderId)]);
+export const authorizations=pgTable('authorizations',{id:pk(),organizationId:org(),workOrderId:text('work_order_id').notNull().references(()=>workOrders.id,{onDelete:'cascade'}),status:text('status').default('pending').notNull(),amount:numeric('amount',{precision:12,scale:2}),purchaseOrderNumber:text('purchase_order_number'),authorizedBy:text('authorized_by'),authorizationMethod:text('authorization_method'),authorizedAt:timestamp('authorized_at',{withTimezone:true}),notes:text('notes'),createdAt:created()},t=>[index('authorizations_org_wo_idx').on(t.organizationId,t.workOrderId)]);
+export const maintenanceSchedules=pgTable('maintenance_schedules',{id:pk(),organizationId:org(),vehicleId:text('vehicle_id').notNull().references(()=>vehicles.id,{onDelete:'cascade'}),serviceCode:text('service_code').notNull(),intervalMiles:integer('interval_miles'),intervalDays:integer('interval_days'),nextDueMileage:integer('next_due_mileage'),nextDueAt:timestamp('next_due_at',{withTimezone:true}),active:boolean('active').default(true).notNull(),createdAt:created(),updatedAt:updated()},t=>[index('maintenance_schedules_org_due_idx').on(t.organizationId,t.nextDueAt)]);
+export const maintenanceEvents=pgTable('maintenance_events',{id:pk(),organizationId:org(),scheduleId:text('schedule_id').references(()=>maintenanceSchedules.id,{onDelete:'set null'}),vehicleId:text('vehicle_id').notNull().references(()=>vehicles.id,{onDelete:'cascade'}),workOrderId:text('work_order_id').references(()=>workOrders.id,{onDelete:'set null'}),eventType:text('event_type').notNull(),mileage:integer('mileage'),occurredAt:timestamp('occurred_at',{withTimezone:true}).defaultNow().notNull(),notes:text('notes')},t=>[index('maintenance_events_org_vehicle_idx').on(t.organizationId,t.vehicleId,t.occurredAt)]);
 
-// ============================================================================
-// 3. Emails Table - Synced messages, AI summaries, action items & sentiment
-// ============================================================================
-export const emails = pgTable(
-  'emails',
-  {
-    id: text('id')
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
-    inboxId: text('inbox_id'),
-    threadId: text('thread_id'),
-    fromAddress: text('from_address').notNull(),
-    fromName: text('from_name'),
-    avatarUrl: text('avatar_url'),
-    toAddresses: text('to_addresses')
-      .array()
-      .notNull()
-      .default(sql`'{}'::text[]`),
-    subject: text('subject').notNull().default('(No Subject)'),
-    textContent: text('text_content'),
-    htmlContent: text('html_content'),
-    isRead: boolean('is_read').default(false).notNull(),
-    isStarred: boolean('is_starred').default(false).notNull(),
-    actionRequired: text('action_required'),
-    labels: text('labels')
-      .array()
-      .default(sql`'{}'::text[]`),
-    summary: jsonb('summary'), // { tldr, actionItems, urgency, sentiment, suggestedReplies }
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_emails_user_id').on(table.userId),
-    index('idx_emails_inbox_id').on(table.inboxId),
-    index('idx_emails_thread_id').on(table.threadId),
-    index('idx_emails_created_at').on(table.createdAt),
-    index('idx_emails_is_read').on(table.isRead),
-    index('idx_emails_is_starred').on(table.isStarred),
-  ]
-);
+export const parts=pgTable('parts',{id:pk(),organizationId:org(),sku:text('sku').notNull(),name:text('name').notNull(),description:text('description'),unitCost:numeric('unit_cost',{precision:12,scale:2}),unitPrice:numeric('unit_price',{precision:12,scale:2}),createdAt:created(),updatedAt:updated()},t=>[uniqueIndex('parts_org_sku_uq').on(t.organizationId,t.sku)]);
+export const inventory=pgTable('inventory',{id:pk(),organizationId:org(),partId:text('part_id').notNull().references(()=>parts.id,{onDelete:'cascade'}),locationId:text('location_id').references(()=>locations.id,{onDelete:'cascade'}),quantity:numeric('quantity',{precision:12,scale:3}).default('0').notNull(),reorderPoint:numeric('reorder_point',{precision:12,scale:3}).default('0').notNull(),updatedAt:updated()},t=>[index('inventory_org_part_idx').on(t.organizationId,t.partId)]);
+export const partUsage=pgTable('part_usage',{id:pk(),organizationId:org(),workOrderId:text('work_order_id').notNull().references(()=>workOrders.id,{onDelete:'cascade'}),partId:text('part_id').notNull().references(()=>parts.id,{onDelete:'restrict'}),quantity:numeric('quantity',{precision:12,scale:3}).notNull(),unitCost:numeric('unit_cost',{precision:12,scale:2}),createdAt:created()},t=>[index('part_usage_org_wo_idx').on(t.organizationId,t.workOrderId)]);
+export const estimates=pgTable('estimates',{id:pk(),organizationId:org(),workOrderId:text('work_order_id').references(()=>workOrders.id,{onDelete:'set null'}),customerId:text('customer_id').notNull().references(()=>customers.id,{onDelete:'restrict'}),number:text('number').notNull(),status:text('status').default('draft').notNull(),subtotal:numeric('subtotal',{precision:12,scale:2}).default('0').notNull(),tax:numeric('tax',{precision:12,scale:2}).default('0').notNull(),total:numeric('total',{precision:12,scale:2}).default('0').notNull(),createdAt:created(),updatedAt:updated()},t=>[uniqueIndex('estimates_org_number_uq').on(t.organizationId,t.number)]);
+export const invoices=pgTable('invoices',{id:pk(),organizationId:org(),workOrderId:text('work_order_id').references(()=>workOrders.id,{onDelete:'set null'}),customerId:text('customer_id').notNull().references(()=>customers.id,{onDelete:'restrict'}),estimateId:text('estimate_id').references(()=>estimates.id,{onDelete:'set null'}),number:text('number').notNull(),purchaseOrderNumber:text('purchase_order_number'),status:text('status').default('draft').notNull(),subtotal:numeric('subtotal',{precision:12,scale:2}).default('0').notNull(),tax:numeric('tax',{precision:12,scale:2}).default('0').notNull(),total:numeric('total',{precision:12,scale:2}).default('0').notNull(),balanceDue:numeric('balance_due',{precision:12,scale:2}).default('0').notNull(),dueAt:timestamp('due_at',{withTimezone:true}),createdAt:created(),updatedAt:updated()},t=>[uniqueIndex('invoices_org_number_uq').on(t.organizationId,t.number),index('invoices_org_status_idx').on(t.organizationId,t.status)]);
+export const invoiceLineItems=pgTable('invoice_line_items',{id:pk(),organizationId:org(),invoiceId:text('invoice_id').notNull().references(()=>invoices.id,{onDelete:'cascade'}),kind:text('kind').notNull(),description:text('description').notNull(),quantity:numeric('quantity',{precision:12,scale:3}).default('1').notNull(),unitPrice:numeric('unit_price',{precision:12,scale:2}).notNull(),taxRate:numeric('tax_rate',{precision:7,scale:4}).default('0').notNull(),lineTotal:numeric('line_total',{precision:12,scale:2}).notNull(),position:integer('position').default(0).notNull()},t=>[index('invoice_items_org_invoice_idx').on(t.organizationId,t.invoiceId)]);
+export const payments=pgTable('payments',{id:pk(),organizationId:org(),invoiceId:text('invoice_id').notNull().references(()=>invoices.id,{onDelete:'restrict'}),provider:text('provider'),externalPaymentId:text('external_payment_id'),amount:numeric('amount',{precision:12,scale:2}).notNull(),status:text('status').default('pending').notNull(),paidAt:timestamp('paid_at',{withTimezone:true}),createdAt:created()},t=>[index('payments_org_invoice_idx').on(t.organizationId,t.invoiceId)]);
 
-export type Email = typeof emails.$inferSelect;
-export type NewEmail = typeof emails.$inferInsert;
+export const emailThreads=pgTable('email_threads',{id:pk(),organizationId:org(),inboxId:text('inbox_id').notNull().references(()=>inboxes.id,{onDelete:'cascade'}),externalThreadId:text('external_thread_id').notNull(),customerId:text('customer_id').references(()=>customers.id,{onDelete:'set null'}),workOrderId:text('work_order_id').references(()=>workOrders.id,{onDelete:'set null'}),subject:text('subject'),lastMessageAt:timestamp('last_message_at',{withTimezone:true}),createdAt:created(),updatedAt:updated()},t=>[uniqueIndex('email_threads_org_external_uq').on(t.organizationId,t.externalThreadId)]);
+export const emails=pgTable('emails',{id:pk(),organizationId:org(),inboxId:text('inbox_id').notNull().references(()=>inboxes.id,{onDelete:'cascade'}),threadId:text('thread_id').references(()=>emailThreads.id,{onDelete:'set null'}),externalMessageId:text('external_message_id').notNull(),direction:text('direction').notNull(),fromAddress:text('from_address').notNull(),toAddresses:text('to_addresses').array().default(sql`'{}'::text[]`).notNull(),subject:text('subject').default('(No Subject)').notNull(),textContent:text('text_content'),htmlContent:text('html_content'),isRead:boolean('is_read').default(false).notNull(),labels:text('labels').array().default(sql`'{}'::text[]`).notNull(),sentAt:timestamp('sent_at',{withTimezone:true}),createdAt:created(),updatedAt:updated()},t=>[uniqueIndex('emails_org_external_uq').on(t.organizationId,t.externalMessageId),index('emails_org_thread_idx').on(t.organizationId,t.threadId)]);
+export const emailSummaries=pgTable('email_summaries',{id:pk(),organizationId:org(),emailId:text('email_id').notNull().references(()=>emails.id,{onDelete:'cascade'}),summary:jsonb('summary').notNull(),model:text('model'),createdAt:created()},t=>[uniqueIndex('email_summaries_org_email_uq').on(t.organizationId,t.emailId)]);
+export const documents=pgTable('documents',{id:pk(),organizationId:org(),customerId:text('customer_id').references(()=>customers.id,{onDelete:'set null'}),vehicleId:text('vehicle_id').references(()=>vehicles.id,{onDelete:'set null'}),workOrderId:text('work_order_id').references(()=>workOrders.id,{onDelete:'set null'}),kind:text('kind').notNull(),name:text('name').notNull(),storageKey:text('storage_key').notNull(),mimeType:text('mime_type'),sizeBytes:integer('size_bytes'),createdBy:text('created_by').references(()=>users.id,{onDelete:'set null'}),createdAt:created()},t=>[index('documents_org_wo_idx').on(t.organizationId,t.workOrderId)]);
+export const auditEvents=pgTable('audit_events',{id:pk(),organizationId:org(),actorUserId:text('actor_user_id').references(()=>users.id,{onDelete:'set null'}),eventType:text('event_type').notNull(),entityType:text('entity_type'),entityId:text('entity_id'),requestId:text('request_id'),payload:jsonb('payload').default(sql`'{}'::jsonb`).notNull(),occurredAt:timestamp('occurred_at',{withTimezone:true}).defaultNow().notNull()},t=>[index('audit_events_org_time_idx').on(t.organizationId,t.occurredAt)]);
+export const chatMessages=pgTable('chat_messages',{id:pk(),organizationId:org(),userId:text('user_id').notNull().references(()=>users.id,{onDelete:'cascade'}),role:text('role').notNull(),content:text('content').notNull(),metadata:jsonb('metadata').default(sql`'{}'::jsonb`).notNull(),createdAt:created()},t=>[index('chat_messages_org_user_idx').on(t.organizationId,t.userId,t.createdAt)]);
 
-// ============================================================================
-// 4. Contacts Table - Address Book & CRM entries
-// ============================================================================
-export const contacts = pgTable(
-  'contacts',
-  {
-    id: text('id')
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
-    name: text('name').notNull(),
-    email: text('email').notNull(),
-    company: text('company'),
-    role: text('role'),
-    phone: text('phone'),
-    avatarUrl: text('avatar_url'),
-    tags: text('tags')
-      .array()
-      .default(sql`'{}'::text[]`),
-    notes: text('notes'),
-    lastContacted: timestamp('last_contacted', { withTimezone: true }),
-    isFavorite: boolean('is_favorite').default(false).notNull(),
-    source: text('source').default('manual').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_contacts_user_id').on(table.userId),
-    index('idx_contacts_email').on(table.email),
-    index('idx_contacts_is_favorite').on(table.isFavorite),
-    index('idx_contacts_created_at').on(table.createdAt),
-  ]
-);
-
-export type ContactRecord = typeof contacts.$inferSelect;
-export type NewContactRecord = typeof contacts.$inferInsert;
-
-// ============================================================================
-// 5. Chat Messages Table - AI Copilot interactions, email drafts & invites
-// ============================================================================
-export const chatMessages = pgTable(
-  'chat_messages',
-  {
-    id: text('id')
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
-    role: text('role').notNull(), // 'user' | 'assistant' | 'system'
-    content: text('content').notNull(),
-    chips: text('chips')
-      .array()
-      .default(sql`'{}'::text[]`),
-    calendarInvite: jsonb('calendar_invite'),
-    emailDraft: jsonb('email_draft'),
-    emailSummary: jsonb('email_summary'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_chat_messages_user_id').on(table.userId),
-    index('idx_chat_messages_created_at').on(table.createdAt),
-  ]
-);
-
-export type ChatMessageRecord = typeof chatMessages.$inferSelect;
-export type NewChatMessageRecord = typeof chatMessages.$inferInsert;
+export type User=typeof users.$inferSelect; export type NewUser=typeof users.$inferInsert;
+export type Inbox=typeof inboxes.$inferSelect; export type NewInbox=typeof inboxes.$inferInsert;
+export type Email=typeof emails.$inferSelect; export type NewEmail=typeof emails.$inferInsert;
+export type ContactRecord=typeof contacts.$inferSelect; export type NewContactRecord=typeof contacts.$inferInsert;
+export type ChatMessageRecord=typeof chatMessages.$inferSelect; export type NewChatMessageRecord=typeof chatMessages.$inferInsert;
