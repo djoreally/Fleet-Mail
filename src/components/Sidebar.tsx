@@ -15,6 +15,7 @@ import {
   Building2,
   BadgeDollarSign,
   Files
+  ,LogOut
 } from 'lucide-react';
 
 export type AppTab = 'inbox' | 'sent' | 'drafts' | 'contacts' | 'chat' | 'settings'
@@ -32,6 +33,7 @@ interface SidebarProps {
   userEmail?: string;
   userName?: string;
   userAvatar?: string;
+  onSignOut?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -44,7 +46,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenCompose,
   userEmail = 'operator@fleetos.app',
   userName = 'Alex Carter',
-  userAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+  userAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+  onSignOut
 }) => {
   const mailItems: Array<{
     id: AppTab;
@@ -78,7 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'chat',
-      label: 'AI Chat',
+      label: 'AtlasCloud Agent',
       icon: <Bot className="w-4 h-4" />
     }
   ];
@@ -207,6 +210,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {userEmail}
             </p>
           </div>
+          {onSignOut && <button type="button" onClick={onSignOut} className="ml-auto rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Sign out"><LogOut className="h-4 w-4" /></button>}
         </div>
       </div>
     </aside>

@@ -16,7 +16,7 @@ const authUrl =
 export const neon = createClient({
   auth: {
     url: authUrl,
-    allowAnonymous: true,
+    allowAnonymous: false,
   },
   dataApi: {
     url: dataApiUrl,

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { serverConfig } from '../config.js';
 import { callAICompletion } from '../services/ai.js';
 import { getAgentMailClient } from '../services/agentmail.js';
+import { decodeVin, decodeVins, NhtsaError } from '../services/nhtsa.js';
 import type { StoredContact, StoredEmail } from '../types.js';
 
 export const apiRouter = Router();
@@ -9,6 +10,26 @@ export const apiRouter = Router();
 const { atlasCloudBaseUrl: ATLASCLOUD_BASE_URL, atlasCloudModel: ATLASCLOUD_MODEL,
   agentMailBaseUrl: AGENTMAIL_BASE_URL, defaultInbox: DEFAULT_INBOX,
   neonDataApiUrl: NEON_DATA_API_URL, neonAuthUrl: NEON_AUTH_URL } = serverConfig;
+
+apiRouter.post('/vehicles/decode-vin', async (req, res) => {
+  try {
+    const decoded = await decodeVin(req.body ?? {});
+    return res.json({ decoded });
+  } catch (error) {
+    const status = error instanceof NhtsaError ? error.status : 500;
+    return res.status(status).json({ error: error instanceof Error ? error.message : 'VIN decoding failed' });
+  }
+});
+
+apiRouter.post('/vehicles/decode-vins', async (req, res) => {
+  try {
+    const results = await decodeVins(req.body?.vehicles);
+    return res.json({ results, count: results.length });
+  } catch (error) {
+    const status = error instanceof NhtsaError ? error.status : 500;
+    return res.status(status).json({ error: error instanceof Error ? error.message : 'VIN batch decoding failed' });
+  }
+});
 
 // In-memory email cache & storage for thread tracking and caching AI summaries
 let simulatedEmails: StoredEmail[] = [
