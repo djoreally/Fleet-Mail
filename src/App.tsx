@@ -17,6 +17,7 @@ import { SignUpPage } from './components/auth/SignUpPage';
 import { ForgotPasswordPage } from './components/auth/ForgotPasswordPage';
 import { ResetPasswordPage } from './components/auth/ResetPasswordPage';
 import { VehicleWorkspace } from './components/vehicles/VehicleWorkspace';
+import { fleetFetch } from './lib/fleetApi';
 import {
   EmailMessage,
   ChatMessage,
@@ -140,7 +141,7 @@ function FleetWorkspaceApp({ onSignOut }: { onSignOut?: () => void }) {
 
   const fetchContacts = async () => {
     try {
-      const res = await fetch('/api/contacts');
+      const res = await fleetFetch('/api/contacts');
       if (res.ok) {
         const data = await res.json();
         setContacts(data.contacts || []);
@@ -152,7 +153,7 @@ function FleetWorkspaceApp({ onSignOut }: { onSignOut?: () => void }) {
 
   const handleAddContact = async (payload: Partial<Contact>): Promise<boolean> => {
     try {
-      const res = await fetch('/api/contacts', {
+      const res = await fleetFetch('/api/contacts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -170,7 +171,7 @@ function FleetWorkspaceApp({ onSignOut }: { onSignOut?: () => void }) {
 
   const handleUpdateContact = async (id: string, payload: Partial<Contact>): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/contacts/${id}`, {
+      const res = await fleetFetch(`/api/contacts/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -188,7 +189,7 @@ function FleetWorkspaceApp({ onSignOut }: { onSignOut?: () => void }) {
 
   const handleDeleteContact = async (id: string): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/contacts/${id}`, {
+      const res = await fleetFetch(`/api/contacts/${id}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -204,7 +205,7 @@ function FleetWorkspaceApp({ onSignOut }: { onSignOut?: () => void }) {
 
   const handleExtractFromInbox = async (): Promise<number> => {
     try {
-      const res = await fetch('/api/contacts/extract-from-inbox', {
+      const res = await fleetFetch('/api/contacts/extract-from-inbox', {
         method: 'POST'
       });
       if (res.ok) {
