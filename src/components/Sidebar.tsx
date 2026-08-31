@@ -45,8 +45,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   contactsCount = 0,
   onOpenCompose,
   userEmail = 'operator@fleetos.app',
-  userName = 'Alex Carter',
-  userAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+  userName = 'Fleet User',
+  userAvatar,
   onSignOut
 }) => {
   const mailItems: Array<{
@@ -197,11 +197,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* User Card */}
         <div className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-slate-50 transition-colors">
-          <img
-            src={userAvatar}
-            alt={userName}
-            className="w-8 h-8 rounded-full object-cover border border-slate-200"
-          />
+          {userAvatar ? (
+            <img
+              src={userAvatar}
+              alt={userName}
+              className="w-8 h-8 rounded-full object-cover border border-slate-200"
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-blue-100 text-[#0b57d0] flex items-center justify-center text-xs font-bold border border-blue-200">
+              {userName.slice(0, 1).toUpperCase()}
+            </div>
+          )}
           <div className="overflow-hidden">
             <p className="text-xs font-semibold text-slate-900 truncate">
               {userName}

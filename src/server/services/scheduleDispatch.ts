@@ -103,6 +103,6 @@ export class ScheduleDispatchService {
     const org = this.org(organizationId); const token = this.token(authorization);
     const tables = ['customers','vehicles','work_orders','technicians','resources','appointments'] as const;
     const values = await Promise.all(tables.map(table => this.request<JsonRecord[]>(token, `${table}?organization_id=eq.${org}&limit=200`)));
-    return Object.fromEntries(tables.map((table, index) => [table, values[index]]));
+    return Object.fromEntries(tables.map((table, index) => [table, (values[index] || []).filter((row) => row && typeof row === 'object')]));
   }
 }

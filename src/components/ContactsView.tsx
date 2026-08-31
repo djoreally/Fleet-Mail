@@ -676,7 +676,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Sarah Jenkins"
+                    placeholder="Full name"
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
                     className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0b57d0]/20 focus:border-[#0b57d0]"
@@ -691,7 +691,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                   <input
                     type="email"
                     required
-                    placeholder="e.g. sarah.j@company.com"
+                    placeholder="name@company.com"
                     value={formEmail}
                     onChange={(e) => setFormEmail(e.target.value)}
                     className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0b57d0]/20 focus:border-[#0b57d0]"

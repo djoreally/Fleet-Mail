@@ -449,8 +449,7 @@ function FleetWorkspaceApp({ onSignOut }: { onSignOut?: () => void }) {
           setIsComposeOpen(true);
         }}
         userEmail={activeInbox}
-        userName="Alex Carter"
-        userAvatar="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"
+        userName="Fleet User"
         onSignOut={onSignOut}
       />
 

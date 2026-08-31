@@ -64,87 +64,7 @@ apiRouter.post('/vehicles/decode-vins', async (req, res) => {
 });
 
 // In-memory email cache & storage for thread tracking and caching AI summaries
-let simulatedEmails: StoredEmail[] = [
-  {
-    id: 'msg_sarah_q3',
-    thread_id: 'th_001',
-    inbox_id: DEFAULT_INBOX,
-    from: 'sarah.j@company.com',
-    fromName: 'Sarah Jenkins',
-    avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-    to: [DEFAULT_INBOX, 'david.chen@company.com', 'design-team@company.com'],
-    subject: 'Q3 Strategy Alignment Meeting',
-    text: `Hi team,\n\nThanks for sending over the deck. The presentation looks solid overall, and the narrative flow is much better than our last iteration.\n\nHowever, we need to refine the OKRs for the engineering team before Thursday's review. Specifically, Key Result 2 (latency reduction) seems too ambiguous. Let's make sure we have concrete metrics tied to it.\n\nCan we get these updated by tomorrow EOD?\n\nBest,\nSarah`,
-    created_at: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-    formattedTime: '10:42 AM',
-    relativeTime: '2 hours ago',
-    read: false,
-    starred: true,
-    actionRequired: 'Refine OKRs by Thursday.',
-    summary: {
-      tldr: 'Sarah approved the presentation but requested specific updates to the engineering OKRs prior to Thursday\'s review meeting.',
-      actionItems: ['Refine OKRs for the engineering team before Thursday review', 'Add concrete metrics to Key Result 2 (latency reduction) by tomorrow EOD'],
-      urgency: 'High',
-      sentiment: 'Informative',
-      keyPoints: ['Presentation narrative flow looks solid', 'Key Result 2 needs concrete latency metrics', 'Deadline: Tomorrow EOD for engineering OKRs update'],
-      suggestedReplies: ['Draft update OKRs', 'Schedule sync with Eng', 'Confirm review timeline'],
-      generatedAt: new Date().toISOString(),
-      modelUsed: 'AtlasCloud Dots-3 (Active Intelligence)'
-    }
-  },
-  {
-    id: 'msg_design_guild',
-    thread_id: 'th_002',
-    inbox_id: DEFAULT_INBOX,
-    from: 'design-guild@company.com',
-    fromName: 'Design System Guild',
-    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    to: ['All Product & Engineering', DEFAULT_INBOX],
-    subject: "New tokens published for 'Cognitive Clarity'",
-    text: `We've updated the Figma library with the new neutral palette. Please sync your files when you start your next sprint.\n\nKey changes include updated token mappings for background-subtle, text-primary, and elevated elevation tokens.\n\nLet us know in #design-system if you have any questions!`,
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-    formattedTime: 'Yesterday',
-    relativeTime: 'Yesterday',
-    read: true,
-    starred: false,
-    summary: {
-      tldr: "The Design System Guild published updated 'Cognitive Clarity' tokens to Figma; teams should sync their local component libraries.",
-      actionItems: ['Sync Figma component files at the start of next sprint'],
-      urgency: 'Low',
-      sentiment: 'Informative',
-      keyPoints: ['Updated neutral palette & elevation tokens', 'Support available in #design-system'],
-      suggestedReplies: ['Acknowledge & sync', 'Request token migration guide'],
-      generatedAt: new Date().toISOString(),
-      modelUsed: 'AtlasCloud Dots-3 (Active Intelligence)'
-    }
-  },
-  {
-    id: 'msg_security_alerts',
-    thread_id: 'th_003',
-    inbox_id: DEFAULT_INBOX,
-    from: 'no-reply@security.company.com',
-    fromName: 'Security Alerts',
-    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-    to: [DEFAULT_INBOX],
-    subject: 'New sign-in from Chrome on Mac',
-    text: `We noticed a new login to your account. If this was you, no action is needed.\n\nDevice: Chrome on macOS\nLocation: San Francisco, CA\nIP: 192.0.2.42\nTime: Today, 8:15 AM\n\nIf you did not authorize this login, please reset your password immediately and secure your account.`,
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 72).toISOString(),
-    formattedTime: 'Mon',
-    relativeTime: '3 days ago',
-    read: true,
-    starred: false,
-    summary: {
-      tldr: 'Standard security alert confirming a recognized sign-in on Chrome on Mac from San Francisco.',
-      actionItems: ['No action required if recognized; change password if suspicious'],
-      urgency: 'Low',
-      sentiment: 'Neutral',
-      keyPoints: ['Device: Chrome on macOS', 'Location: San Francisco, CA'],
-      suggestedReplies: ['Mark as recognized', 'Review active sessions'],
-      generatedAt: new Date().toISOString(),
-      modelUsed: 'AtlasCloud Dots-3 (Active Intelligence)'
-    }
-  }
-];
+let simulatedEmails: StoredEmail[] = [];
 
 
 // 1. Status Check API
@@ -713,14 +633,18 @@ apiRouter.post('/agentmail/simulate-incoming', async (req, res) => {
   try {
     const { from, subject, text, inbox = DEFAULT_INBOX } = req.body;
 
+    if (!from || !subject || !text) {
+      return res.status(400).json({ error: 'from, subject, and text are required' });
+    }
+
     const newIncoming: StoredEmail = {
       id: `msg_in_${Date.now()}`,
       thread_id: `th_in_${Date.now()}`,
       inbox_id: inbox,
-      from: from || 'alex.chen@innovatecorp.io',
+      from,
       to: inbox,
-      subject: subject || 'Urgent: Feedback on Dots-3 Note API Implementation & Roadmap',
-      text: text || 'Hey,\n\nJust tested the new AtlasCloud dots-3-note-prev-free integration. The latency is under 400ms and response quality on email thread distillation is solid.\n\nCould we schedule a quick 15-min sync tomorrow morning to review the live deployment and verify moms@agentmail.to polling triggers?\n\nLet me know what time works best.\n\nCheers,\nAlex Chen',
+      subject,
+      text,
       created_at: new Date().toISOString(),
       read: false,
       starred: true,
@@ -739,78 +663,7 @@ apiRouter.post('/agentmail/simulate-incoming', async (req, res) => {
 });
 
 // 7. Contacts API & Address Book Endpoints
-let storedContacts: StoredContact[] = [
-  {
-    id: 'cnt_sarah',
-    name: 'Sarah Jenkins',
-    email: 'sarah.j@company.com',
-    company: 'Enterprise Products Corp',
-    role: 'VP of Product Strategy',
-    phone: '+1 (555) 349-8821',
-    avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-    tags: ['VIP', 'Team', 'Executive'],
-    notes: 'Primary point of contact for Q3 strategy alignment and executive reviews.',
-    lastContacted: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-    isFavorite: true,
-    source: 'inbox'
-  },
-  {
-    id: 'cnt_alex_chen',
-    name: 'Alex Chen',
-    email: 'alex.chen@innovatecorp.io',
-    company: 'InnovateCorp Systems',
-    role: 'Lead AI Engineer',
-    phone: '+1 (555) 782-9910',
-    avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-    tags: ['VIP', 'AI/ML', 'Partners'],
-    notes: 'Working on AtlasCloud Dots-3 and AgentMail integration pipelines.',
-    lastContacted: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
-    isFavorite: true,
-    source: 'agentmail'
-  },
-  {
-    id: 'cnt_david_chen',
-    name: 'David Chen',
-    email: 'david.chen@company.com',
-    company: 'Enterprise Products Corp',
-    role: 'Staff Infrastructure Architect',
-    phone: '+1 (555) 612-4491',
-    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-    tags: ['Team', 'Engineering'],
-    notes: 'Coordinates backend performance benchmarks and deployment pipelines.',
-    lastContacted: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
-    isFavorite: false,
-    source: 'inbox'
-  },
-  {
-    id: 'cnt_maya_lin',
-    name: 'Maya Lin',
-    email: 'maya.lin@designguild.org',
-    company: 'Design System Guild',
-    role: 'Principal Design Lead',
-    phone: '+1 (555) 234-8901',
-    avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
-    tags: ['Design', 'Team'],
-    notes: 'Author of Cognitive Clarity design tokens and UI architecture.',
-    lastContacted: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-    isFavorite: false,
-    source: 'inbox'
-  },
-  {
-    id: 'cnt_marcus_vance',
-    name: 'Marcus Vance',
-    email: 'marcus@vanceresearch.ai',
-    company: 'Vance Research Lab',
-    role: 'Founding Partner',
-    phone: '+1 (555) 902-1133',
-    avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
-    tags: ['Investor', 'VIP'],
-    notes: 'Quarterly investor updates and strategic growth advisory.',
-    lastContacted: new Date(Date.now() - 1000 * 60 * 60 * 72).toISOString(),
-    isFavorite: true,
-    source: 'manual'
-  }
-];
+let storedContacts: StoredContact[] = [];
 
 // GET /api/contacts - List contacts
 apiRouter.get('/contacts', (req, res) => {
