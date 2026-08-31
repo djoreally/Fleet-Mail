@@ -98,12 +98,10 @@ let simulatedEmails: StoredEmail[] = [
 apiRouter.get('/status', (req, res) => {
   const atlasKey = process.env.ATLASCLOUD_API_KEY;
   const agentKey = process.env.AGENTMAIL_API_KEY;
-  const geminiKey = process.env.GEMINI_API_KEY;
 
   res.json({
     atlasCloudConfigured: Boolean(atlasKey && atlasKey !== 'your-atlascloud-api-key' && atlasKey.trim() !== ''),
     agentMailConfigured: Boolean(agentKey && agentKey !== 'your-agentmail-api-key' && agentKey.trim() !== ''),
-    geminiConfigured: Boolean(geminiKey && geminiKey !== 'MY_GEMINI_API_KEY' && geminiKey.trim() !== ''),
     neonConfigured: Boolean(NEON_DATA_API_URL && NEON_AUTH_URL),
     neonDataApiUrl: NEON_DATA_API_URL,
     neonAuthUrl: NEON_AUTH_URL,

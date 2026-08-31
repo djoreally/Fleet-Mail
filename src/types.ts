@@ -52,7 +52,6 @@ export interface ChatMessage {
 export interface SystemStatus {
   atlasCloudConfigured: boolean;
   agentMailConfigured: boolean;
-  geminiConfigured: boolean;
   defaultInbox: string;
   model: string;
   activeInbox: string;
@@ -95,4 +94,3 @@ export interface Contact {
   isFavorite?: boolean;
   source?: 'manual' | 'agentmail' | 'inbox' | 'google';
 }
-

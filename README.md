@@ -28,7 +28,6 @@ Server-only secrets:
 - `AGENTMAIL_API_KEY`: verified Fleet OS AgentMail organization key.
 - `AGENTMAIL_WEBHOOK_SECRET`: verifies raw AgentMail webhook payloads.
 - `ATLASCLOUD_API_KEY`: primary AI provider credential.
-- `GEMINI_API_KEY`: optional fallback AI provider credential.
 - `TENANT_SECRET_KEK_REF`: secret-manager/KMS reference used for tenant-scoped AgentMail keys.
 
 Runtime configuration:
