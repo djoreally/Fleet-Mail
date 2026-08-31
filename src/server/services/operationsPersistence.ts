@@ -1,4 +1,5 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { getDb } from '../../db/index.js';
 import { customers, maintenanceEvents, maintenanceSchedules, organizations, vehicles, workOrders } from '../../db/drizzleSchema.js';
 
@@ -56,7 +57,7 @@ export async function createWorkOrder(organizationId: string, input: Record<stri
   if (!vehicle) throw new Error('Vehicle was not found in this organization');
   const generatedNumber = `WO-${new Date().getUTCFullYear()}-${Date.now().toString().slice(-6)}`;
   const [created] = await db.insert(workOrders).values({
-    organizationId, vehicleId, customerId: vehicle.customerId,
+    id: randomUUID(), organizationId, vehicleId, customerId: vehicle.customerId,
     number: String(input.number || generatedNumber), status: String(input.status || 'draft'),
     priority: String(input.priority || 'normal'), complaint: input.complaint ? String(input.complaint) : null,
   }).returning();
@@ -110,7 +111,7 @@ export async function createMaintenanceSchedule(organizationId: string, input: R
   const intervalDays = input.intervalDays == null ? null : Number(input.intervalDays);
   if (!intervalMiles && !intervalDays) throw new Error('At least one maintenance interval is required');
   const [created] = await db.insert(maintenanceSchedules).values({
-    organizationId, vehicleId, serviceCode, intervalMiles, intervalDays,
+    id: randomUUID(), organizationId, vehicleId, serviceCode, intervalMiles, intervalDays,
     nextDueMileage: input.nextDueMileage == null ? (intervalMiles && vehicle.mileage != null ? vehicle.mileage + intervalMiles : null) : Number(input.nextDueMileage),
     nextDueAt: input.nextDueAt ? new Date(String(input.nextDueAt)) : (intervalDays ? new Date(Date.now() + intervalDays * 86_400_000) : null),
   }).returning();
@@ -125,7 +126,7 @@ export async function completeMaintenance(organizationId: string, scheduleId: st
   const mileage = input.mileage == null ? null : Number(input.mileage);
   const occurredAt = input.occurredAt ? new Date(String(input.occurredAt)) : new Date();
   const [event] = await db.insert(maintenanceEvents).values({
-    organizationId, scheduleId, vehicleId: schedule.vehicleId, workOrderId: input.workOrderId ? String(input.workOrderId) : null,
+    id: randomUUID(), organizationId, scheduleId, vehicleId: schedule.vehicleId, workOrderId: input.workOrderId ? String(input.workOrderId) : null,
     eventType: 'completed', mileage, occurredAt, notes: input.notes ? String(input.notes) : null,
   }).returning();
   await db.update(maintenanceSchedules).set({
