@@ -1,7 +1,7 @@
 import { neon, Pool } from '@neondatabase/serverless';
 import { drizzle as drizzleServerless } from 'drizzle-orm/neon-serverless';
 import { drizzle as drizzleHttp } from 'drizzle-orm/neon-http';
-import * as schema from './drizzleSchema';
+import * as schema from './drizzleSchema.js';
 
 let dbInstance: ReturnType<typeof drizzleHttp> | ReturnType<typeof drizzleServerless> | null = null;
 
@@ -43,5 +43,5 @@ export function createNeonPool(connectionString?: string) {
   return drizzleServerless(pool, { schema });
 }
 
-export * from './drizzleSchema';
+export * from './drizzleSchema.js';
 export { schema };
