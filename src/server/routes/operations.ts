@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { completeMaintenance, createMaintenanceSchedule, createWorkOrder, deleteWorkOrder, listMaintenance, listWorkOrders, updateWorkOrder } from '../services/operationsPersistence.js';
+import { getTechnicianWorkOrderContext } from '../services/technicianContext.js';
 import { FleetAuthError, fleetAuthFailure, requireFleetOrganization } from '../services/fleetAuth.js';
 
 export const operationsRouter = Router();
@@ -13,6 +14,10 @@ function failure(res: Parameters<typeof fleetAuthFailure>[0], error: unknown) {
 
 operationsRouter.get('/work-orders', async (req, res) => {
   try { const organizationId = await requireFleetOrganization(req); res.json({ organizationId, workOrders: await listWorkOrders(organizationId) }); }
+  catch (error) { failure(res, error); }
+});
+operationsRouter.get('/work-orders/:id/technician-context', async (req, res) => {
+  try { const organizationId = await requireFleetOrganization(req); res.json(await getTechnicianWorkOrderContext(organizationId, req.params.id)); }
   catch (error) { failure(res, error); }
 });
 operationsRouter.post('/work-orders', async (req, res) => {

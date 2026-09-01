@@ -1,5 +1,6 @@
 import { Pool } from '@neondatabase/serverless';
 import { randomUUID } from 'node:crypto';
+import { normalizeVehicleServiceSpecifications, type VehicleServiceSpecifications } from './vehicleSpecifications.js';
 
 export type VehicleStatus = 'active' | 'down' | 'out_of_service' | 'retired';
 
@@ -22,7 +23,7 @@ export interface VehicleInput {
   department?: string | null;
   inServiceDate?: string | null;
   notes?: string | null;
-  specifications?: Record<string, unknown> | null;
+  specifications?: Partial<VehicleServiceSpecifications> | Record<string, unknown> | null;
   type?: string | null;
   assignment?: string | null;
 }
@@ -66,7 +67,7 @@ function normalize(input: VehicleInput): Required<Omit<VehicleInput, 'id'>> {
     department: input.department?.trim() || null,
     inServiceDate: input.inServiceDate?.trim() || null,
     notes: input.notes?.trim() || null,
-    specifications: input.specifications || {},
+    specifications: normalizeVehicleServiceSpecifications(input.specifications),
     type: input.type?.trim() || null,
     assignment: input.assignment?.trim() || null,
   };
