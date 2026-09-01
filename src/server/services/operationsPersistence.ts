@@ -4,6 +4,7 @@ import { getDb } from '../../db/index.js';
 import { customers, maintenanceEvents, maintenanceSchedules, organizations, vehicles, workOrders } from '../../db/drizzleSchema.js';
 
 export type DueState = 'overdue' | 'due_soon' | 'upcoming' | 'unknown';
+export const WORK_ORDER_STATUSES = ['draft','scheduled','assigned','en_route','arrived','in_progress','review','authorization_pending','authorized','complete','completed','cancelled'] as const;
 
 export function calculateDueState(nextDueAt: Date | null, nextDueMileage: number | null, mileage: number | null, now = new Date()): DueState {
   const milesLeft = nextDueMileage == null || mileage == null ? null : nextDueMileage - mileage;
@@ -54,6 +55,9 @@ export async function listWorkOrders(organizationId: string) {
     .where(eq(workOrders.organizationId, organizationId)).orderBy(desc(workOrders.updatedAt));
 }
 
+const requestedServicesFrom = (value: unknown) => value == null ? [] : Array.isArray(value) ? value.map(String).map(v=>v.trim()).filter(Boolean) : String(value).split(/[,\n]/).map(v=>v.trim()).filter(Boolean);
+const optionalNumber = (value: unknown) => value === '' || value == null ? null : Number(value);
+
 export async function createWorkOrder(organizationId: string, input: Record<string, unknown>) {
   const db = database();
   const vehicleId = String(input.vehicleId || '');
@@ -62,22 +66,27 @@ export async function createWorkOrder(organizationId: string, input: Record<stri
     .where(and(eq(vehicles.organizationId, organizationId), eq(vehicles.id, vehicleId))).limit(1);
   if (!vehicle) throw new Error('Vehicle was not found in this organization');
   const generatedNumber = `WO-${new Date().getUTCFullYear()}-${Date.now().toString().slice(-6)}`;
+  const status = String(input.status || 'scheduled');
+  if (!WORK_ORDER_STATUSES.includes(status as typeof WORK_ORDER_STATUSES[number])) throw new Error('Invalid work order status');
   const [created] = await db.insert(workOrders).values({
     id: randomUUID(), organizationId, vehicleId, customerId: vehicle.customerId,
-    number: String(input.number || generatedNumber), status: String(input.status || 'draft'),
-    priority: String(input.priority || 'normal'), complaint: input.complaint ? String(input.complaint) : null,
+    number: String(input.number || generatedNumber), status,
+    priority: String(input.priority || 'routine'), complaint: input.complaint ? String(input.complaint) : null,
+    requestedServices: requestedServicesFrom(input.requestedServices),
+    purchaseOrderNumber: input.purchaseOrderNumber ? String(input.purchaseOrderNumber) : null,
+    odometer: optionalNumber(input.odometer), engineHours: optionalNumber(input.engineHours),
+    customerNotes: input.customerNotes ? String(input.customerNotes) : null,
+    technicianNotes: input.technicianNotes ? String(input.technicianNotes) : null,
+    scheduledAt: input.scheduledAt ? new Date(String(input.scheduledAt)) : null,
   }).returning();
   return created;
 }
 
 export async function updateWorkOrder(organizationId: string, id: string, input: Record<string, unknown>) {
   const db = database();
-  const allowedStatus = ['draft','intake','inspection_pending','inspection_complete','authorization_pending','authorized','service_in_progress','completed','cancelled'];
   const status = input.status == null ? undefined : String(input.status);
-  if (status && !allowedStatus.includes(status)) throw new Error('Invalid work order status');
-  const requestedServices = input.requestedServices == null ? undefined
-    : Array.isArray(input.requestedServices) ? input.requestedServices.map(String)
-      : String(input.requestedServices).split(/[,\n]/).map(value => value.trim()).filter(Boolean);
+  if (status && !WORK_ORDER_STATUSES.includes(status as typeof WORK_ORDER_STATUSES[number])) throw new Error('Invalid work order status');
+  const requestedServices = input.requestedServices == null ? undefined : requestedServicesFrom(input.requestedServices);
   const [updated] = await db.update(workOrders).set({
     ...(status ? { status } : {}),
     ...(input.priority != null ? { priority: String(input.priority) } : {}),
@@ -86,15 +95,15 @@ export async function updateWorkOrder(organizationId: string, id: string, input:
     ...(input.scheduledAt !== undefined ? { scheduledAt: input.scheduledAt ? new Date(String(input.scheduledAt)) : null } : {}),
     ...(input.technicianId !== undefined ? { technicianId: input.technicianId ? String(input.technicianId) : null } : {}),
     ...(input.locationId !== undefined ? { locationId: input.locationId ? String(input.locationId) : null } : {}),
-    ...(input.odometer !== undefined ? { odometer: input.odometer === '' || input.odometer == null ? null : Number(input.odometer) } : {}),
-    ...(input.engineHours !== undefined ? { engineHours: input.engineHours === '' || input.engineHours == null ? null : Number(input.engineHours) } : {}),
+    ...(input.odometer !== undefined ? { odometer: optionalNumber(input.odometer) } : {}),
+    ...(input.engineHours !== undefined ? { engineHours: optionalNumber(input.engineHours) } : {}),
     ...(input.purchaseOrderNumber !== undefined ? { purchaseOrderNumber: input.purchaseOrderNumber ? String(input.purchaseOrderNumber) : null } : {}),
     ...(requestedServices !== undefined ? { requestedServices } : {}),
     ...(input.customerNotes !== undefined ? { customerNotes: input.customerNotes ? String(input.customerNotes) : null } : {}),
     ...(input.technicianNotes !== undefined ? { technicianNotes: input.technicianNotes ? String(input.technicianNotes) : null } : {}),
     ...(input.laborMinutes !== undefined ? { laborMinutes: Number(input.laborMinutes || 0) } : {}),
     ...(input.travelMinutes !== undefined ? { travelMinutes: Number(input.travelMinutes || 0) } : {}),
-    ...(status === 'completed' ? { completedAt: new Date() } : {}),
+    ...((status === 'complete' || status === 'completed') ? { completedAt: new Date() } : {}),
     updatedAt: new Date(),
   }).where(and(eq(workOrders.organizationId, organizationId), eq(workOrders.id, id))).returning();
   if (!updated) throw new Error('Work order was not found');
