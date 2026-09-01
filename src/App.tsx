@@ -306,7 +306,7 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
         content: m.content
       }));
 
-      const res = await fetch('/api/chat', {
+      const res = await fleetFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -335,17 +335,12 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
       };
 
       setChatMessages(prev => [...prev, assistantMsg]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       const errorMsg: ChatMessage = {
         id: `err_${Date.now()}`,
         role: 'assistant',
-        content: `I've analyzed your request: "${text}".\n\nI can draft that response, summarize specific threads, or refine the calendar invitation for your team.`,
+        content: `I could not complete that request: ${err instanceof Error ? err.message : 'The Fleet OS service returned an unexpected error.'}`,
         timestamp: new Date().toISOString(),
-        emailDraft: {
-          to: 'sarah.j@company.com',
-          subject: 'Re: Q3 Strategy Alignment Meeting & OKRs',
-          body: `Hi Sarah,\n\nI have reviewed the feedback. We will refine Key Result 2 with explicit latency metrics and submit the updated OKRs by tomorrow EOD.\n\nBest regards,\nAlex`
-        }
       };
       setChatMessages(prev => [...prev, errorMsg]);
     } finally {
@@ -358,7 +353,7 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
       ? { ...message, actionProposal: { ...message.actionProposal, state: 'executing', error: undefined } }
       : message));
     try {
-      const response = await fetch('/api/agent/actions/execute', {
+      const response = await fleetFetch('/api/agent/actions/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirmationToken, confirmed: true }),

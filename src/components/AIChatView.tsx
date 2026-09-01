@@ -13,7 +13,8 @@ import {
   Mic,
   MicOff,
   Image as ImageIcon,
-  XCircle
+  XCircle,
+  CheckCircle2
 } from 'lucide-react';
 import { ChatMessage, type ChatAttachment } from '../types';
 import { AgentSkillsPanel } from './AgentSkillsPanel';
@@ -204,7 +205,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({
                           <p className="mt-1 text-sm font-semibold text-slate-900">{msg.actionProposal.proposal.summary}</p>
                           <p className="mt-1 text-xs text-slate-600">The agent prepared this action but has not executed it.</p>
                         </div>
-                        {msg.actionProposal.proposal.kind === 'calendar.create' ? <Calendar className="h-5 w-5 shrink-0 text-amber-700" /> : <Send className="h-5 w-5 shrink-0 text-amber-700" />}
+                        {msg.actionProposal.proposal.kind === 'calendar.create' ? <Calendar className="h-5 w-5 shrink-0 text-amber-700" /> : msg.actionProposal.proposal.kind === 'email.send' ? <Send className="h-5 w-5 shrink-0 text-amber-700" /> : <CheckCircle2 className="h-5 w-5 shrink-0 text-amber-700" />}
                       </div>
                       {msg.actionProposal.error && <p className="mt-3 text-xs font-medium text-red-700">{msg.actionProposal.error}</p>}
                       <div className="mt-4 flex items-center justify-between gap-3 border-t border-amber-200 pt-3">
@@ -218,7 +219,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({
                             onClick={() => onConfirmAction(msg.id, msg.actionProposal!.confirmationToken)}
                             className="rounded-xl bg-[#0b57d0] px-4 py-2 text-xs font-semibold text-white hover:bg-[#0848b0] disabled:opacity-50"
                           >
-                            {msg.actionProposal.state === 'executing' ? 'Executing…' : msg.actionProposal.proposal.kind === 'calendar.create' ? 'Confirm & create event' : 'Confirm & send email'}
+                            {msg.actionProposal.state === 'executing' ? 'Executing…' : msg.actionProposal.proposal.kind === 'calendar.create' ? 'Confirm & create event' : msg.actionProposal.proposal.kind === 'email.send' ? 'Confirm & send email' : 'Confirm action'}
                           </button>
                         )}
                       </div>

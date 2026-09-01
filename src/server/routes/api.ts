@@ -11,9 +11,10 @@ import type { StoredContact, StoredEmail } from '../types.js';
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
-import { contacts as contactTable } from '../../db/drizzleSchema.js';
+import { contactRepository } from '../services/contactStore.js';
 import { crawlWebsite, extractWebsiteUrl } from '../services/firecrawl.js';
 import { fetchWithBrowserbase } from '../services/browserbase.js';
+import { FLEET_AGENT_CONTRACT } from '../services/agentContract.js';
 
 export const apiRouter = Router();
 
@@ -124,7 +125,7 @@ apiRouter.post('/chat', async (req, res) => {
       console.warn('Agent grounding inbox unavailable:', error instanceof Error ? error.message : error);
     }
 
-    const contactContext = typeof storedContacts === 'undefined' ? [] : storedContacts.slice(0, 40).map((contact) => ({ name: contact.name, email: contact.email, company: contact.company, role: contact.role }));
+    const contactContext = (await contactRepository().list(await requireFleetOrganization(req))).slice(0, 40).map((contact: any) => ({ name: contact.name, email: contact.email, role: contact.role }));
     const latestUserText = [...(Array.isArray(messages) ? messages : [])].reverse().find((message: any) => message?.role === 'user')?.content || '';
     const websiteUrl = extractWebsiteUrl(String(latestUserText));
     let websiteResearch = null;
@@ -136,42 +137,12 @@ apiRouter.post('/chat', async (req, res) => {
     }
     const groundedContext = redactObject({ selectedEmail: activeEmail || null, recentInbox, contacts: contactContext, websiteResearch, browserResearch, attachedDocuments: attachments.filter((file: any) => file.text).map((file: any) => ({ name: file.name, type: file.type, text: file.text })) });
 
-    const systemPrompt = `You are "ChatMail AI" powered by AtlasCloud's dots-studio/dots-3-note-prev-free model.
-You are an intelligent, proactive executive email copilot and communication assistant managing inbox "${contextInbox || DEFAULT_INBOX}".
+    const systemPrompt = `${FLEET_AGENT_CONTRACT}
 
-You are the Fleet OS agent. Your enabled skills are thread memory, predictive drafting, sentiment and tone analysis, grounded recall, inbox/contact search, Browserbase browser access, Firecrawl website research, confirmed email execution, confirmed calendar execution, fleet-context reasoning, sensitive-data protection, and Sentinel confirmation.
-
-Rules:
-1. Ground names, facts, deadlines, and claims in the supplied context. Clearly label assumptions and never invent search results.
-2. Detect urgency, frustration, ambiguity, and relationship risk. Use the user's preferred ${personality} tone.
-3. Extract action items, owners, dates, blockers, and the safest next action.
-4. Never claim an email was sent, an event was created, or data was changed. You may prepare an action, but the UI executes it only after explicit confirmation.
-5. For outbound email, provide a one-click draft block. Never include secrets, SSNs, or payment-card data.
-6. For bulk work, prepare reviewable drafts; never auto-send a batch.
-7. The visible response must be plain human-readable text. Never use Markdown headings, asterisks, underscores, tables, or fenced code. Use short paragraphs and simple sentences.
-8. When websiteResearch or browserResearch is present, answer from that content and include the relevant source URL as a plain link. Do not claim you accessed pages absent from the supplied context.
-
-Structure for 1-click sendable email block (if applicable):
-\`\`\`json:email_draft
-{
-  "to": "recipient@example.com",
-  "subject": "Clear Subject Line",
-  "body": "Hi Name,\\n\\nEmail body text here...\\n\\nBest regards,\\nSender"
-}
-\`\`\`
-
-When the user asks to send an email or create a calendar event, also prepare exactly one reviewable action block. Never say it was executed:
-\`\`\`json:agent_action
-{"kind":"email.send","payload":{"to":"recipient@example.com","subject":"Subject","text":"Body"}}
-\`\`\`
-or
-\`\`\`json:agent_action
-{"kind":"calendar.create","payload":{"title":"Event title","start":"ISO-8601 date-time","end":"ISO-8601 date-time","attendees":["person@example.com"],"description":"Optional context"}}
-\`\`\`
-
-Current Context:
+SESSION CONTEXT
 - Active Inbox: ${contextInbox || DEFAULT_INBOX}
- - Grounded data: ${JSON.stringify(groundedContext)}
+- Preferred tone: ${personality}
+- Grounded data: ${JSON.stringify(groundedContext)}
 ${activeEmail ? `- Selected Email Context:
   From: ${activeEmail.from}
   Subject: ${activeEmail.subject}
@@ -205,7 +176,7 @@ Respond helpfully, clearly, and proactively.`;
     if (actionMatch) {
       try {
         const action = JSON.parse(actionMatch[1]);
-        actionProposal = createAgentActionProposal(action.kind, action.payload);
+        actionProposal = createAgentActionProposal(action.kind, action.payload, await requireFleetOrganization(req));
       } catch (error) {
         console.warn('Ignored invalid agent action proposal:', error instanceof Error ? error.message : error);
       }
@@ -697,32 +668,20 @@ apiRouter.post('/agentmail/simulate-incoming', async (req, res) => {
 
 // 7. Contacts API & Address Book Endpoints
 let storedContacts: StoredContact[] = [];
-const contactRepository = () => {
-  const database=getDb(); if(!database) throw new Error('DATABASE_URL is required');
-  return {
-    list:(organizationId:string,_page?:unknown)=>database.select().from(contactTable).where(eq(contactTable.organizationId,organizationId)),
-    getById:async(organizationId:string,id:string)=>(await database.select().from(contactTable).where(and(eq(contactTable.organizationId,organizationId),eq(contactTable.id,id))).limit(1))[0]||null,
-    upsert:async(organizationId:string,value:any)=>{const fields={name:String(value.name||value.email),email:value.email?String(value.email).toLowerCase():null,phone:value.phone||null,role:value.role||null,notes:value.notes||null,tags:Array.isArray(value.tags)?value.tags:[],isPrimary:Boolean(value.isPrimary||value.isFavorite)};if(value.id){return (await database.update(contactTable).set({...fields,updatedAt:new Date()}).where(and(eq(contactTable.organizationId,organizationId),eq(contactTable.id,value.id))).returning())[0];}const existing=value.email?(await database.select().from(contactTable).where(and(eq(contactTable.organizationId,organizationId),eq(contactTable.email,String(value.email).toLowerCase()))).limit(1))[0]:null;if(existing)return (await database.update(contactTable).set({...fields,updatedAt:new Date()}).where(eq(contactTable.id,existing.id)).returning())[0];return (await database.insert(contactTable).values({id:randomUUID(),organizationId,...fields}).returning())[0];},
-    delete:async(organizationId:string,id:string)=>(await database.delete(contactTable).where(and(eq(contactTable.organizationId,organizationId),eq(contactTable.id,id))).returning()).length>0,
-  };
-};
 const presentContact = (contact:any):StoredContact => ({ id:contact.id,name:contact.name,email:contact.email,company:contact.company||undefined,role:contact.role||undefined,phone:contact.phone||undefined,notes:contact.notes||undefined,tags:contact.tags||[],isFavorite:Boolean(contact.isFavorite),source:contact.source||'manual',lastContacted:contact.updatedAt ? new Date(contact.updatedAt).toISOString() : undefined });
 
 // GET /api/contacts - List contacts
 apiRouter.get('/contacts', async (req, res) => {
-  try { const organizationId=await requireFleetOrganization(req); const query=String(req.query.q||'').toLowerCase().trim(); const all=(await contactRepository().list(organizationId,{limit:500})).map(presentContact); const contacts=query?all.filter(c=>`${c.name} ${c.email} ${c.company||''} ${(c.tags||[]).join(' ')}`.toLowerCase().includes(query)):all; return res.json({contacts,total:contacts.length}); } catch(error) { return vehicleError(res,error); }
+  try { const organizationId=await requireFleetOrganization(req); const query=String(req.query.q||'').toLowerCase().trim(); const all=(await contactRepository().list(organizationId)).map(presentContact); const contacts=query?all.filter(c=>`${c.name} ${c.email} ${c.company||''} ${(c.tags||[]).join(' ')}`.toLowerCase().includes(query)):all; return res.json({contacts,total:contacts.length}); } catch(error) { return vehicleError(res,error); }
 });
 
 // POST /api/contacts - Create contact
 apiRouter.post('/contacts', async (req, res) => {
-  const { name, email, company, role, phone, tags, notes, isFavorite } = req.body;
-
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required' });
-  }
-
-  const cleanEmail = email.trim().toLowerCase();
-  try { const organizationId=await requireFleetOrganization(req); const saved=await contactRepository().upsert(organizationId,{name:name?.trim()||cleanEmail.split('@')[0],email:cleanEmail,company:company?.trim()||null,role:role?.trim()||null,phone:phone?.trim()||null,notes:notes?.trim()||null,tags:Array.isArray(tags)?tags:(tags?[tags]:['General']),isFavorite:Boolean(isFavorite),source:'manual'}); return res.status(201).json({success:true,contact:presentContact(saved)}); } catch(error) { return vehicleError(res,error); }
+  const { name, email, company, role, phone, tags, notes, isFavorite } = req.body ?? {};
+  const cleanEmail = typeof email === 'string' && email.trim() ? email.trim().toLowerCase() : null;
+  const cleanName = typeof name === 'string' && name.trim() ? name.trim() : cleanEmail?.split('@')[0];
+  if (!cleanName) return res.status(400).json({ error: 'A contact name or email is required' });
+  try { const organizationId=await requireFleetOrganization(req); const saved=await contactRepository().upsert(organizationId,{name:cleanName,email:cleanEmail,company:company?.trim()||null,role:role?.trim()||null,phone:phone?.trim()||null,notes:notes?.trim()||null,tags:Array.isArray(tags)?tags:(tags?[tags]:['General']),isFavorite:Boolean(isFavorite),source:'manual'}); return res.status(201).json({success:true,contact:presentContact(saved)}); } catch(error) { return vehicleError(res,error); }
 });
 
 // PUT /api/contacts/:id - Update contact
