@@ -24,7 +24,8 @@ import {
   SystemStatus,
   SendEmailPayload,
   PersonalizationSettings,
-  Contact
+  Contact,
+  ChatAttachment
 } from './types';
 
 function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () => void; userEmail?: string; userName?: string }) {
@@ -284,12 +285,13 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
   };
 
   // Send message to AI Chat
-  const handleSendChatMessage = async (text: string) => {
+  const handleSendChatMessage = async (text: string, attachments: ChatAttachment[] = []) => {
     const userMsg: ChatMessage = {
       id: `user_${Date.now()}`,
       role: 'user',
       content: text,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      attachments
     };
 
     const newMessages = [...chatMessages, userMsg];
@@ -311,7 +313,8 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
           messages: apiMessages,
           contextInbox: activeInbox,
           activeEmail: selectedEmail,
-          personality: settings.personalityFocus
+          personality: settings.personalityFocus,
+          attachments
         })
       });
 

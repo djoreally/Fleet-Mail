@@ -6,7 +6,15 @@ import { contacts, customers, inventory, parts, vehicles } from '../../db/drizzl
 export type CustomerInput = {
   name: string;
   accountNumber?: string | null;
+  primaryContactName?: string | null;
+  primaryContactEmail?: string | null;
+  billingContactName?: string | null;
   billingEmail?: string | null;
+  billingAddress?: Record<string, string>;
+  poRequired?: boolean;
+  defaultPoNumber?: string | null;
+  paymentTerms?: string;
+  taxStatus?: string;
   phone?: string | null;
   status?: string;
   notes?: string | null;
@@ -33,12 +41,29 @@ const finite = (value: unknown, fallback = 0) => {
   if (!Number.isFinite(result) || result < 0) throw new Error('Numeric values must be zero or greater');
   return result;
 };
+const bool = (value: unknown) => value === true || value === 'true' || value === 'on' || value === '1';
+const address = (input: Record<string, unknown>) => ({
+  line1: optional(input.billingAddressLine1, 200) ?? '',
+  line2: optional(input.billingAddressLine2, 200) ?? '',
+  city: optional(input.billingCity, 100) ?? '',
+  state: optional(input.billingState, 80) ?? '',
+  postalCode: optional(input.billingPostalCode, 30) ?? '',
+  country: optional(input.billingCountry, 80) ?? '',
+});
 
 export function normalizeCustomerInput(input: Record<string, unknown>): CustomerInput {
   return {
     name: clean(input.name, 'Customer name'),
     accountNumber: optional(input.accountNumber, 80),
+    primaryContactName: optional(input.primaryContactName, 200),
+    primaryContactEmail: optional(input.primaryContactEmail, 320),
+    billingContactName: optional(input.billingContactName, 200),
     billingEmail: optional(input.billingEmail, 320),
+    billingAddress: address(input),
+    poRequired: bool(input.poRequired),
+    defaultPoNumber: optional(input.defaultPoNumber, 100),
+    paymentTerms: optional(input.paymentTerms, 40) ?? 'net_30',
+    taxStatus: optional(input.taxStatus, 40) ?? 'taxable',
     phone: optional(input.phone, 50),
     status: optional(input.status, 40) ?? 'active',
     notes: optional(input.notes, 2000),
@@ -74,11 +99,15 @@ export class OperationsDataService {
     );
     return db.select({
       id: customers.id, name: customers.name, accountNumber: customers.accountNumber,
+      primaryContactName: customers.primaryContactName, primaryContactEmail: customers.primaryContactEmail,
+      billingContactName: customers.billingContactName, billingAddress: customers.billingAddress,
+      poRequired: customers.poRequired, defaultPoNumber: customers.defaultPoNumber,
+      paymentTerms: customers.paymentTerms, taxStatus: customers.taxStatus,
       billingEmail: customers.billingEmail, phone: customers.phone, status: customers.status,
       notes: customers.notes, updatedAt: customers.updatedAt,
       vehicleCount: sql<number>`count(distinct ${vehicles.id})::int`,
-      primaryContact: sql<string | null>`max(${contacts.name}) filter (where ${contacts.isPrimary} = true)`,
-      contactEmail: sql<string | null>`max(${contacts.email}) filter (where ${contacts.isPrimary} = true)`,
+      primaryContact: sql<string | null>`coalesce(${customers.primaryContactName}, max(${contacts.name}) filter (where ${contacts.isPrimary} = true))`,
+      contactEmail: sql<string | null>`coalesce(${customers.primaryContactEmail}, max(${contacts.email}) filter (where ${contacts.isPrimary} = true))`,
       spend30Days: sql<string>`(select coalesce(sum(i.total), 0)::text from invoices i where i.organization_id = ${organizationId} and i.customer_id = ${customers.id} and i.created_at >= now() - interval '30 days' and i.status not in ('void','draft'))`,
     }).from(customers)
       .leftJoin(vehicles, and(eq(vehicles.customerId, customers.id), eq(vehicles.organizationId, organizationId)))

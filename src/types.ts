@@ -48,6 +48,17 @@ export interface ChatMessage {
   emailSummary?: EmailSummary;
   actionProposal?: AgentActionProposal;
   isStreaming?: boolean;
+  attachments?: ChatAttachment[];
+}
+
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  kind: 'image' | 'document';
+  dataUrl?: string;
+  text?: string;
 }
 
 export interface AgentActionProposal {

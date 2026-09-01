@@ -2,7 +2,7 @@ import { serverConfig } from '../config.js';
 
 export interface AIMessage {
   role: string;
-  content: string;
+  content: string | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>;
 }
 
 export async function callAICompletion(messages: AIMessage[], systemPrompt?: string) {

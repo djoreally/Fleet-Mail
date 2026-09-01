@@ -1,17 +1,16 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '../../db/index.js';
 import { customers, maintenanceEvents, maintenanceSchedules, organizations, vehicles, workOrders } from '../../db/drizzleSchema.js';
 
 export type DueState = 'overdue' | 'due_soon' | 'upcoming' | 'unknown';
 
-export function calculateDueState(nextDueAt: Date | null, nextDueMileage: number | null, mileage: number | null, now = new Date(), nextDueEngineHours: number | null = null, engineHours: number | null = null): DueState {
+export function calculateDueState(nextDueAt: Date | null, nextDueMileage: number | null, mileage: number | null, now = new Date()): DueState {
   const milesLeft = nextDueMileage == null || mileage == null ? null : nextDueMileage - mileage;
-  const hoursLeft = nextDueEngineHours == null || engineHours == null ? null : nextDueEngineHours - engineHours;
   const daysLeft = nextDueAt == null ? null : (nextDueAt.getTime() - now.getTime()) / 86_400_000;
-  if (milesLeft == null && hoursLeft == null && daysLeft == null) return 'unknown';
-  if ((milesLeft != null && milesLeft <= 0) || (hoursLeft != null && hoursLeft <= 0) || (daysLeft != null && daysLeft <= 0)) return 'overdue';
-  if ((milesLeft != null && milesLeft <= 500) || (hoursLeft != null && hoursLeft <= 25) || (daysLeft != null && daysLeft <= 30)) return 'due_soon';
+  if (milesLeft == null && daysLeft == null) return 'unknown';
+  if ((milesLeft != null && milesLeft <= 0) || (daysLeft != null && daysLeft <= 0)) return 'overdue';
+  if ((milesLeft != null && milesLeft <= 500) || (daysLeft != null && daysLeft <= 30)) return 'due_soon';
   return 'upcoming';
 }
 
@@ -40,6 +39,12 @@ export async function listWorkOrders(organizationId: string) {
   return db.select({
     id: workOrders.id, number: workOrders.number, status: workOrders.status, priority: workOrders.priority,
     complaint: workOrders.complaint, diagnosis: workOrders.diagnosis, completedAt: workOrders.completedAt,
+    scheduledAt: workOrders.scheduledAt, technicianId: workOrders.technicianId,
+    odometer: workOrders.odometer, engineHours: workOrders.engineHours,
+    purchaseOrderNumber: workOrders.purchaseOrderNumber, requestedServices: workOrders.requestedServices,
+    customerNotes: workOrders.customerNotes, technicianNotes: workOrders.technicianNotes,
+    laborMinutes: workOrders.laborMinutes, travelMinutes: workOrders.travelMinutes,
+    locationId: workOrders.locationId,
     createdAt: workOrders.createdAt, updatedAt: workOrders.updatedAt,
     vehicleId: vehicles.id, unitNumber: vehicles.unitNumber, year: vehicles.year, make: vehicles.make, model: vehicles.model,
     customerId: customers.id, customerName: customers.name,
@@ -59,29 +64,37 @@ export async function createWorkOrder(organizationId: string, input: Record<stri
   const generatedNumber = `WO-${new Date().getUTCFullYear()}-${Date.now().toString().slice(-6)}`;
   const [created] = await db.insert(workOrders).values({
     id: randomUUID(), organizationId, vehicleId, customerId: vehicle.customerId,
-    number: String(input.number || generatedNumber), status: String(input.status || 'scheduled'),
-    priority: String(input.priority || 'routine'), complaint: input.complaint ? String(input.complaint) : null,
-    scheduledAt: input.scheduledAt ? new Date(String(input.scheduledAt)) : null,
-    locationId: input.locationId ? String(input.locationId) : null,
-    odometer: input.odometer == null ? null : Number(input.odometer), engineHours: input.engineHours == null ? null : Number(input.engineHours),
-    purchaseOrderNumber: input.purchaseOrderNumber ? String(input.purchaseOrderNumber) : null,
-    requestedServices: Array.isArray(input.requestedServices) ? input.requestedServices.map(String) : String(input.requestedServices || '').split(/[,\n]/).map(value => value.trim()).filter(Boolean),
-    customerNotes: input.customerNotes ? String(input.customerNotes) : null,
+    number: String(input.number || generatedNumber), status: String(input.status || 'draft'),
+    priority: String(input.priority || 'normal'), complaint: input.complaint ? String(input.complaint) : null,
   }).returning();
   return created;
 }
 
 export async function updateWorkOrder(organizationId: string, id: string, input: Record<string, unknown>) {
   const db = database();
-  const allowedStatus = ['scheduled','assigned','en_route','arrived','in_progress','review','complete','cancelled','intake','inspection_pending','inspection_complete','authorization_pending','authorized','service_in_progress','completed'];
+  const allowedStatus = ['draft','intake','inspection_pending','inspection_complete','authorization_pending','authorized','service_in_progress','completed','cancelled'];
   const status = input.status == null ? undefined : String(input.status);
   if (status && !allowedStatus.includes(status)) throw new Error('Invalid work order status');
+  const requestedServices = input.requestedServices == null ? undefined
+    : Array.isArray(input.requestedServices) ? input.requestedServices.map(String)
+      : String(input.requestedServices).split(/[,\n]/).map(value => value.trim()).filter(Boolean);
   const [updated] = await db.update(workOrders).set({
     ...(status ? { status } : {}),
     ...(input.priority != null ? { priority: String(input.priority) } : {}),
     ...(input.complaint != null ? { complaint: String(input.complaint) } : {}),
     ...(input.diagnosis != null ? { diagnosis: String(input.diagnosis) } : {}),
-    ...(status === 'completed' || status === 'complete' ? { completedAt: new Date() } : {}),
+    ...(input.scheduledAt !== undefined ? { scheduledAt: input.scheduledAt ? new Date(String(input.scheduledAt)) : null } : {}),
+    ...(input.technicianId !== undefined ? { technicianId: input.technicianId ? String(input.technicianId) : null } : {}),
+    ...(input.locationId !== undefined ? { locationId: input.locationId ? String(input.locationId) : null } : {}),
+    ...(input.odometer !== undefined ? { odometer: input.odometer === '' || input.odometer == null ? null : Number(input.odometer) } : {}),
+    ...(input.engineHours !== undefined ? { engineHours: input.engineHours === '' || input.engineHours == null ? null : Number(input.engineHours) } : {}),
+    ...(input.purchaseOrderNumber !== undefined ? { purchaseOrderNumber: input.purchaseOrderNumber ? String(input.purchaseOrderNumber) : null } : {}),
+    ...(requestedServices !== undefined ? { requestedServices } : {}),
+    ...(input.customerNotes !== undefined ? { customerNotes: input.customerNotes ? String(input.customerNotes) : null } : {}),
+    ...(input.technicianNotes !== undefined ? { technicianNotes: input.technicianNotes ? String(input.technicianNotes) : null } : {}),
+    ...(input.laborMinutes !== undefined ? { laborMinutes: Number(input.laborMinutes || 0) } : {}),
+    ...(input.travelMinutes !== undefined ? { travelMinutes: Number(input.travelMinutes || 0) } : {}),
+    ...(status === 'completed' ? { completedAt: new Date() } : {}),
     updatedAt: new Date(),
   }).where(and(eq(workOrders.organizationId, organizationId), eq(workOrders.id, id))).returning();
   if (!updated) throw new Error('Work order was not found');
@@ -98,13 +111,12 @@ export async function listMaintenance(organizationId: string) {
   const db = database();
   const rows = await db.select({
     id: maintenanceSchedules.id, vehicleId: maintenanceSchedules.vehicleId, serviceCode: maintenanceSchedules.serviceCode,
-    program: maintenanceSchedules.program, intervalMiles: maintenanceSchedules.intervalMiles, intervalDays: maintenanceSchedules.intervalDays, intervalEngineHours: maintenanceSchedules.intervalEngineHours,
-    lastServiceMileage: maintenanceSchedules.lastServiceMileage, lastServiceEngineHours: maintenanceSchedules.lastServiceEngineHours, lastServiceAt: maintenanceSchedules.lastServiceAt,
-    nextDueMileage: maintenanceSchedules.nextDueMileage, nextDueEngineHours: maintenanceSchedules.nextDueEngineHours, nextDueAt: maintenanceSchedules.nextDueAt, active: maintenanceSchedules.active,
-    unitNumber: vehicles.unitNumber, mileage: vehicles.mileage, engineHours: vehicles.engineHours, year: vehicles.year, make: vehicles.make, model: vehicles.model,
+    intervalMiles: maintenanceSchedules.intervalMiles, intervalDays: maintenanceSchedules.intervalDays,
+    nextDueMileage: maintenanceSchedules.nextDueMileage, nextDueAt: maintenanceSchedules.nextDueAt, active: maintenanceSchedules.active,
+    unitNumber: vehicles.unitNumber, mileage: vehicles.mileage, year: vehicles.year, make: vehicles.make, model: vehicles.model,
   }).from(maintenanceSchedules).innerJoin(vehicles, and(eq(vehicles.id, maintenanceSchedules.vehicleId), eq(vehicles.organizationId, organizationId)))
     .where(eq(maintenanceSchedules.organizationId, organizationId)).orderBy(maintenanceSchedules.nextDueAt);
-  return rows.map(row => ({ ...row, dueState: calculateDueState(row.nextDueAt, row.nextDueMileage, row.mileage, new Date(), row.nextDueEngineHours, row.engineHours) }));
+  return rows.map(row => ({ ...row, dueState: calculateDueState(row.nextDueAt, row.nextDueMileage, row.mileage) }));
 }
 
 export async function createMaintenanceSchedule(organizationId: string, input: Record<string, unknown>) {
@@ -112,17 +124,14 @@ export async function createMaintenanceSchedule(organizationId: string, input: R
   const vehicleId = String(input.vehicleId || '');
   const serviceCode = String(input.serviceCode || '').trim();
   if (!vehicleId || !serviceCode) throw new Error('vehicleId and serviceCode are required');
-  const [vehicle] = await db.select({ id: vehicles.id, mileage: vehicles.mileage, engineHours: vehicles.engineHours }).from(vehicles)
+  const [vehicle] = await db.select({ id: vehicles.id, mileage: vehicles.mileage }).from(vehicles)
     .where(and(eq(vehicles.organizationId, organizationId), eq(vehicles.id, vehicleId))).limit(1);
   if (!vehicle) throw new Error('Vehicle was not found in this organization');
   const intervalMiles = input.intervalMiles == null ? null : Number(input.intervalMiles);
   const intervalDays = input.intervalDays == null ? null : Number(input.intervalDays);
-  const intervalEngineHours = input.intervalEngineHours == null ? null : Number(input.intervalEngineHours);
-  if (!intervalMiles && !intervalDays && !intervalEngineHours) throw new Error('At least one maintenance interval is required');
+  if (!intervalMiles && !intervalDays) throw new Error('At least one maintenance interval is required');
   const [created] = await db.insert(maintenanceSchedules).values({
-    id: randomUUID(), organizationId, vehicleId, serviceCode, program: input.program ? String(input.program) : null, intervalMiles, intervalDays, intervalEngineHours,
-    lastServiceMileage: input.lastServiceMileage == null ? vehicle.mileage : Number(input.lastServiceMileage), lastServiceEngineHours: input.lastServiceEngineHours == null ? vehicle.engineHours : Number(input.lastServiceEngineHours), lastServiceAt: input.lastServiceAt ? new Date(String(input.lastServiceAt)) : null,
-    nextDueEngineHours: input.nextDueEngineHours == null ? (intervalEngineHours && vehicle.engineHours != null ? vehicle.engineHours + intervalEngineHours : null) : Number(input.nextDueEngineHours),
+    id: randomUUID(), organizationId, vehicleId, serviceCode, intervalMiles, intervalDays,
     nextDueMileage: input.nextDueMileage == null ? (intervalMiles && vehicle.mileage != null ? vehicle.mileage + intervalMiles : null) : Number(input.nextDueMileage),
     nextDueAt: input.nextDueAt ? new Date(String(input.nextDueAt)) : (intervalDays ? new Date(Date.now() + intervalDays * 86_400_000) : null),
   }).returning();
@@ -135,19 +144,16 @@ export async function completeMaintenance(organizationId: string, scheduleId: st
     .where(and(eq(maintenanceSchedules.organizationId, organizationId), eq(maintenanceSchedules.id, scheduleId))).limit(1);
   if (!schedule) throw new Error('Maintenance schedule was not found');
   const mileage = input.mileage == null ? null : Number(input.mileage);
-  const engineHours = input.engineHours == null ? null : Number(input.engineHours);
   const occurredAt = input.occurredAt ? new Date(String(input.occurredAt)) : new Date();
   const [event] = await db.insert(maintenanceEvents).values({
     id: randomUUID(), organizationId, scheduleId, vehicleId: schedule.vehicleId, workOrderId: input.workOrderId ? String(input.workOrderId) : null,
     eventType: 'completed', mileage, occurredAt, notes: input.notes ? String(input.notes) : null,
   }).returning();
   await db.update(maintenanceSchedules).set({
-    lastServiceMileage: mileage ?? schedule.lastServiceMileage, lastServiceEngineHours: engineHours ?? schedule.lastServiceEngineHours, lastServiceAt: occurredAt,
     nextDueMileage: schedule.intervalMiles && mileage != null ? mileage + schedule.intervalMiles : schedule.nextDueMileage,
-    nextDueEngineHours: schedule.intervalEngineHours && engineHours != null ? engineHours + schedule.intervalEngineHours : schedule.nextDueEngineHours,
     nextDueAt: schedule.intervalDays ? new Date(occurredAt.getTime() + schedule.intervalDays * 86_400_000) : schedule.nextDueAt,
     updatedAt: new Date(),
   }).where(and(eq(maintenanceSchedules.organizationId, organizationId), eq(maintenanceSchedules.id, scheduleId)));
-  if (mileage != null || engineHours != null) await db.update(vehicles).set({ ...(mileage != null ? { mileage } : {}), ...(engineHours != null ? { engineHours } : {}), updatedAt: new Date() }).where(and(eq(vehicles.organizationId, organizationId), eq(vehicles.id, schedule.vehicleId)));
+  if (mileage != null) await db.update(vehicles).set({ mileage, updatedAt: new Date() }).where(and(eq(vehicles.organizationId, organizationId), eq(vehicles.id, schedule.vehicleId), sql`${vehicles.mileage} IS NULL OR ${vehicles.mileage} <= ${mileage}`));
   return event;
 }

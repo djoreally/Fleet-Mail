@@ -1,4 +1,4 @@
--- Forward-only expansion of the unit-first Fleet OS operational chain.
+-- Forward-only, idempotent expansion for the unit-first operational chain.
 ALTER TABLE customers
   ADD COLUMN IF NOT EXISTS primary_contact_name text,
   ADD COLUMN IF NOT EXISTS primary_contact_email text,
@@ -73,7 +73,6 @@ CREATE TABLE IF NOT EXISTS service_lines (
 );
 CREATE INDEX IF NOT EXISTS service_lines_org_wo_idx ON service_lines(organization_id, work_order_id);
 
--- Every added tenant table receives the existing membership policy.
 ALTER TABLE inspection_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inspection_items FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_member_access ON inspection_items;
