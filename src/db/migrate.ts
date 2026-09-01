@@ -2,7 +2,6 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { Pool } from '@neondatabase/serverless';
-import 'dotenv/config';
 
 export interface MigrationReport {
   success: boolean;
@@ -16,7 +15,7 @@ export async function runDrizzleMigration(customDatabaseUrl?: string): Promise<M
   const databaseUrl = customDatabaseUrl || process.env.DATABASE_URL || process.env.NEON_DATABASE_URL;
   if (!databaseUrl) throw new Error('DATABASE_URL or NEON_DATABASE_URL is required');
   const migrationDirectory = join(dirname(fileURLToPath(import.meta.url)), 'migrations');
-  const migrations = ['0001_multitenant_rls.sql', '0002_neon_auth_tenant_bootstrap.sql'];
+  const migrations = ['0001_multitenant_rls.sql', '0002_neon_auth_tenant_bootstrap.sql', '0003_operational_chain.sql'];
   const pool = new Pool({ connectionString: databaseUrl });
   try {
     await pool.query('BEGIN');
