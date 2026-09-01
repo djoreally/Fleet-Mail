@@ -27,7 +27,7 @@ import {
   Contact
 } from './types';
 
-function FleetWorkspaceApp({ onSignOut }: { onSignOut?: () => void }) {
+function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () => void; userEmail?: string; userName?: string }) {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [currentTab, setCurrentTab] = useState<AppTab>('inbox');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -76,7 +76,7 @@ function FleetWorkspaceApp({ onSignOut }: { onSignOut?: () => void }) {
     {
       id: 'msg_welcome_ai',
       role: 'assistant',
-      content: `Good morning! I'm your Fleet OS copilot powered by AtlasCloud Dots-3 and AgentMail. I am actively monitoring **${activeInbox}**. You can ask me to summarize fleet requests, identify action items, or draft a response.`,
+      content: `Good morning! I'm your Fleet OS copilot powered by AtlasCloud and AgentMail. I am actively monitoring ${activeInbox}. You can ask me to summarize fleet requests, identify action items, or draft a response.`,
       timestamp: new Date().toISOString(),
       chips: ['Summarize Fleet Inbox', 'Draft Fleet Response', 'Check Urgent Requests']
     }
@@ -449,8 +449,8 @@ function FleetWorkspaceApp({ onSignOut }: { onSignOut?: () => void }) {
           setComposeInitialData({});
           setIsComposeOpen(true);
         }}
-        userEmail={activeInbox}
-        userName="Fleet User"
+        userEmail={userEmail || activeInbox}
+        userName={userName || userEmail?.split('@')[0] || 'Fleet User'}
         onSignOut={onSignOut}
       />
 
@@ -596,7 +596,7 @@ export default function App() {
       )}
       forgotPassword={({ navigate }) => <ForgotPasswordPage onNavigate={navigate} />}
       resetPassword={({ navigate }) => <ResetPasswordPage onNavigate={navigate} />}
-      app={({ signOut }) => <FleetWorkspaceApp onSignOut={() => void signOut()} />}
+      app={({ signOut, user }) => <FleetWorkspaceApp onSignOut={() => void signOut()} userEmail={user?.email} userName={user?.name} />}
       loading={<LoadingScreen />}
     />
   );
