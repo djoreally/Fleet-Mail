@@ -64,6 +64,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   const [formNotes, setFormNotes] = useState('');
   const [formIsFavorite, setFormIsFavorite] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   // Available tag categories for quick selection
   const popularTags = ['VIP', 'Team', 'Executive', 'Engineering', 'Design', 'Client', 'Investor', 'Partners'];
@@ -117,7 +118,11 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
 
   const handleSaveContact = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formEmail.trim() || isSaving) return;
+    setSaveError('');
+    if ((!formName.trim() && !formEmail.trim()) || isSaving) {
+      setSaveError('Enter a contact name or email address before saving.');
+      return;
+    }
 
     setIsSaving(true);
     const payload: Partial<Contact> = {
@@ -139,6 +144,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
     }
 
     setIsSaving(false);
+    if (!success) setSaveError('Contact was not saved. Check your session and try again.');
     if (success) {
       setIsModalOpen(false);
     }
@@ -669,6 +675,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
 
             {/* Modal Form */}
             <form onSubmit={handleSaveContact} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+              {saveError && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-xs font-medium text-rose-700">{saveError}</p>}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Full Name */}
                 <div>
@@ -686,11 +693,10 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 {/* Email Address */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Email Address <span className="text-rose-500">*</span>
+                    Email Address
                   </label>
                   <input
                     type="email"
-                    required
                     placeholder="name@company.com"
                     value={formEmail}
                     onChange={(e) => setFormEmail(e.target.value)}

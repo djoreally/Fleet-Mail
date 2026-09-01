@@ -677,14 +677,11 @@ apiRouter.get('/contacts', async (req, res) => {
 
 // POST /api/contacts - Create contact
 apiRouter.post('/contacts', async (req, res) => {
-  const { name, email, company, role, phone, tags, notes, isFavorite } = req.body;
-
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required' });
-  }
-
-  const cleanEmail = email.trim().toLowerCase();
-  try { const organizationId=await requireFleetOrganization(req); const saved=await contactRepository().upsert(organizationId,{name:name?.trim()||cleanEmail.split('@')[0],email:cleanEmail,company:company?.trim()||null,role:role?.trim()||null,phone:phone?.trim()||null,notes:notes?.trim()||null,tags:Array.isArray(tags)?tags:(tags?[tags]:['General']),isFavorite:Boolean(isFavorite),source:'manual'}); return res.status(201).json({success:true,contact:presentContact(saved)}); } catch(error) { return vehicleError(res,error); }
+  const { name, email, company, role, phone, tags, notes, isFavorite } = req.body ?? {};
+  const cleanEmail = typeof email === 'string' && email.trim() ? email.trim().toLowerCase() : null;
+  const cleanName = typeof name === 'string' && name.trim() ? name.trim() : cleanEmail?.split('@')[0];
+  if (!cleanName) return res.status(400).json({ error: 'A contact name or email is required' });
+  try { const organizationId=await requireFleetOrganization(req); const saved=await contactRepository().upsert(organizationId,{name:cleanName,email:cleanEmail,company:company?.trim()||null,role:role?.trim()||null,phone:phone?.trim()||null,notes:notes?.trim()||null,tags:Array.isArray(tags)?tags:(tags?[tags]:['General']),isFavorite:Boolean(isFavorite),source:'manual'}); return res.status(201).json({success:true,contact:presentContact(saved)}); } catch(error) { return vehicleError(res,error); }
 });
 
 // PUT /api/contacts/:id - Update contact
