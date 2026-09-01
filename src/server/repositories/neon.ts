@@ -1,5 +1,5 @@
 import { Pool } from '@neondatabase/serverless';
-import type { QueryResult, SqlExecutor, TransactionalSqlExecutor } from './sql';
+import type { QueryResult, SqlExecutor, TransactionalSqlExecutor } from './sql.js';
 
 type PoolQueryResult = { rows: Record<string, unknown>[]; rowCount?: number | null };
 
