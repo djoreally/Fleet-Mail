@@ -7,6 +7,7 @@ import { operationsRouter } from './routes/operations.js';
 import { customerPartsRouter } from './routes/customerParts.js';
 import { scheduleDispatchRouter } from './routes/scheduleDispatch.js';
 import { financialDocumentsRouter } from './routes/financialDocuments.js';
+import { vehicle360Router } from './routes/vehicle360.js';
 
 export function createApp() {
   const app = express();
@@ -14,6 +15,7 @@ export function createApp() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
   app.use('/api', apiRouter);
+  app.use('/api', vehicle360Router);
   app.use('/api/google', googleRouter);
   app.use('/api/agentmail/crud', agentmailCrudRouter);
   app.use('/api/agent/actions', agentActionsRouter);
