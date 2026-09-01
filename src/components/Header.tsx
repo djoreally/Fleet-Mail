@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, HelpCircle, Bell, User } from 'lucide-react';
+import { Search, HelpCircle, Bell, Menu } from 'lucide-react';
 
 interface HeaderProps {
   searchQuery: string;
@@ -9,6 +9,7 @@ interface HeaderProps {
   onOpenSettings?: () => void;
   pageTitle?: string;
   userAvatar?: string;
+  onOpenMenu?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -18,10 +19,12 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenHelp,
   onOpenSettings,
   pageTitle,
-  userAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+  userAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+  onOpenMenu
 }) => {
   return (
-    <header id="main-header" className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between z-20 shrink-0">
+    <header id="main-header" className="min-h-16 bg-white border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between gap-2 z-20 shrink-0 pt-[env(safe-area-inset-top)]">
+      <button onClick={onOpenMenu} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-700 hover:bg-slate-100 lg:hidden" aria-label="Open navigation"><Menu className="h-5 w-5" /></button>
       {/* Left / Page Title or Search Bar */}
       {pageTitle ? (
         <div className="flex items-center gap-3">
@@ -30,13 +33,13 @@ export const Header: React.FC<HeaderProps> = ({
           </h2>
         </div>
       ) : (
-        <div className="w-full max-w-xl">
+        <div className="w-full max-w-xl min-w-0">
           <div className="relative flex items-center">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
             <input
               id="global-search-input"
               type="text"
-              placeholder="Search fleet mail, vehicles, and work orders..."
+              placeholder="Search Fleet OS…"
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
               className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-full text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#0b57d0] focus:ring-2 focus:ring-blue-100 transition-all shadow-xs"
@@ -46,13 +49,13 @@ export const Header: React.FC<HeaderProps> = ({
       )}
 
       {/* Right Utilities */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-0.5 sm:gap-2">
         {/* Help Icon */}
         <button
           id="header-help-btn"
           onClick={onOpenHelp}
           title="Help & System Info"
-          className="p-2 rounded-full text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+          className="hidden sm:block p-2 rounded-full text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors"
         >
           <HelpCircle className="w-5 h-5" />
         </button>
