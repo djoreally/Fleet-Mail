@@ -57,7 +57,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({
   return (
     <div id="ai-chat-view-container" className="flex-1 bg-white flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-white shrink-0">
+      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200 flex items-center justify-between bg-white shrink-0">
         <h2 className="text-xl font-bold text-slate-900 tracking-tight">
           AI Assistant
         </h2>
@@ -71,7 +71,7 @@ export const AIChatView: React.FC<AIChatViewProps> = ({
       </div>
 
       {/* Messages Thread */}
-      <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-5 md:space-y-6">
         {showSkills && <AgentSkillsPanel />}
         {/* Date Marker */}
         <div className="flex items-center justify-center">
