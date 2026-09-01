@@ -34,6 +34,8 @@ interface SidebarProps {
   userName?: string;
   userAvatar?: string;
   onSignOut?: () => void;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -47,7 +49,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   userEmail = 'operator@fleetos.app',
   userName = 'Fleet User',
   userAvatar,
-  onSignOut
+  onSignOut,
+  mobileOpen = false,
+  onMobileClose
 }) => {
   const mailItems: Array<{
     id: AppTab;
@@ -99,7 +103,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   return (
-    <aside id="app-sidebar" className="w-60 md:w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 h-full select-none overflow-hidden">
+    <aside id="app-sidebar" className={`${mobileOpen ? 'flex' : 'hidden'} fixed inset-y-0 left-0 z-50 w-[min(86vw,20rem)] bg-white border-r border-slate-200 flex-col justify-between shrink-0 h-[100dvh] select-none overflow-hidden shadow-2xl lg:static lg:z-auto lg:flex lg:w-64 lg:shadow-none`}>
       {/* Top Section */}
       <div className="p-4 space-y-5 overflow-y-auto">
         {/* Brand */}
@@ -135,7 +139,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 key={item.id}
                 id={`nav-${item.id}`}
-                onClick={() => onSelectTab(item.id)}
+                onClick={() => { onSelectTab(item.id); onMobileClose?.(); }}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors duration-150 ${
                   isActive
                     ? 'bg-[#e8f0fe] text-[#0b57d0] font-semibold'
@@ -169,7 +173,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {fleetItems.map((item) => {
             const isActive = currentTab === item.id;
             return (
-              <button key={item.id} id={`nav-${item.id}`} onClick={() => onSelectTab(item.id)}
+              <button key={item.id} id={`nav-${item.id}`} onClick={() => { onSelectTab(item.id); onMobileClose?.(); }}
                 className={`w-full flex items-center gap-3 px-3.5 py-2 rounded-xl text-sm font-medium transition-colors ${isActive ? 'bg-[#e8f0fe] text-[#0b57d0] font-semibold' : 'text-slate-700 hover:bg-slate-100/80'}`}>
                 <span className={isActive ? 'text-[#0b57d0]' : 'text-slate-600'}>{item.icon}</span>
                 <span>{item.label}</span>
@@ -184,7 +188,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Settings button */}
         <button
           id="nav-settings-btn"
-          onClick={() => onSelectTab('settings')}
+          onClick={() => { onSelectTab('settings'); onMobileClose?.(); }}
           className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors duration-150 ${
             currentTab === 'settings'
               ? 'bg-[#e8f0fe] text-[#0b57d0] font-semibold'
