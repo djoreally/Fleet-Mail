@@ -13,6 +13,7 @@ import { and, eq } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
 import { contacts as contactTable } from '../../db/drizzleSchema.js';
 import { crawlWebsite, extractWebsiteUrl } from '../services/firecrawl.js';
+import { fetchWithBrowserbase } from '../services/browserbase.js';
 
 export const apiRouter = Router();
 
@@ -83,6 +84,7 @@ apiRouter.get('/status', (req, res) => {
     neonConfigured: Boolean(NEON_DATA_API_URL && NEON_AUTH_URL),
     googleConfigured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_TOKEN_ENCRYPTION_KEY),
     firecrawlConfigured: Boolean(process.env.FIRECRAWL_API_KEY?.trim()),
+    browserbaseConfigured: Boolean(process.env.BROWSERBASE_API_KEY?.trim()),
     neonDataApiUrl: NEON_DATA_API_URL,
     neonAuthUrl: NEON_AUTH_URL,
     defaultInbox: DEFAULT_INBOX,
@@ -115,13 +117,19 @@ apiRouter.post('/chat', async (req, res) => {
     const contactContext = typeof storedContacts === 'undefined' ? [] : storedContacts.slice(0, 40).map((contact) => ({ name: contact.name, email: contact.email, company: contact.company, role: contact.role }));
     const latestUserText = [...(Array.isArray(messages) ? messages : [])].reverse().find((message: any) => message?.role === 'user')?.content || '';
     const websiteUrl = extractWebsiteUrl(String(latestUserText));
-    const websiteResearch = websiteUrl ? await crawlWebsite(websiteUrl) : null;
-    const groundedContext = redactObject({ selectedEmail: activeEmail || null, recentInbox, contacts: contactContext, websiteResearch });
+    let websiteResearch = null;
+    let browserResearch = null;
+    if (websiteUrl) {
+      if (process.env.BROWSERBASE_API_KEY?.trim()) browserResearch = await fetchWithBrowserbase(websiteUrl);
+      else if (process.env.FIRECRAWL_API_KEY?.trim()) websiteResearch = await crawlWebsite(websiteUrl);
+      else throw new Error('Website research is not configured.');
+    }
+    const groundedContext = redactObject({ selectedEmail: activeEmail || null, recentInbox, contacts: contactContext, websiteResearch, browserResearch });
 
     const systemPrompt = `You are "ChatMail AI" powered by AtlasCloud's dots-studio/dots-3-note-prev-free model.
 You are an intelligent, proactive executive email copilot and communication assistant managing inbox "${contextInbox || DEFAULT_INBOX}".
 
-You are the Fleet OS agent. Your enabled skills are thread memory, predictive drafting, sentiment and tone analysis, grounded recall, inbox/contact search, Firecrawl website research, confirmed email execution, confirmed calendar execution, fleet-context reasoning, sensitive-data protection, and Sentinel confirmation.
+You are the Fleet OS agent. Your enabled skills are thread memory, predictive drafting, sentiment and tone analysis, grounded recall, inbox/contact search, Browserbase browser access, Firecrawl website research, confirmed email execution, confirmed calendar execution, fleet-context reasoning, sensitive-data protection, and Sentinel confirmation.
 
 Rules:
 1. Ground names, facts, deadlines, and claims in the supplied context. Clearly label assumptions and never invent search results.
@@ -131,7 +139,7 @@ Rules:
 5. For outbound email, provide a one-click draft block. Never include secrets, SSNs, or payment-card data.
 6. For bulk work, prepare reviewable drafts; never auto-send a batch.
 7. The visible response must be plain human-readable text. Never use Markdown headings, asterisks, underscores, tables, or fenced code. Use short paragraphs and simple sentences.
-8. When websiteResearch is present, answer from that content and include the relevant source URLs as plain links. Do not claim you crawled pages that are absent from the supplied context.
+8. When websiteResearch or browserResearch is present, answer from that content and include the relevant source URL as a plain link. Do not claim you accessed pages absent from the supplied context.
 
 Structure for 1-click sendable email block (if applicable):
 \`\`\`json:email_draft
@@ -194,7 +202,7 @@ Respond helpfully, clearly, and proactively.`;
       provider: aiResult.provider,
       emailDraft
       ,actionProposal
-      ,skillsUsed: ['context-memory', 'predictive-drafting', 'emotional-intelligence', 'grounded-recall', ...(websiteResearch ? ['website-crawl'] : []), 'pii-redaction', 'sentinel']
+      ,skillsUsed: ['context-memory', 'predictive-drafting', 'emotional-intelligence', 'grounded-recall', ...(browserResearch ? ['browser-access'] : []), ...(websiteResearch ? ['website-crawl'] : []), 'pii-redaction', 'sentinel']
     });
   } catch (error: any) {
     console.error('Chat error:', error);
