@@ -9,7 +9,8 @@ import {
   Check,
   Calendar,
   Clock,
-  Bot
+  Bot,
+  ArrowLeft
 } from 'lucide-react';
 import { EmailMessage } from '../types';
 
@@ -20,6 +21,7 @@ interface EmailDetailProps {
   onSelectSuggestionChip?: (chipText: string) => void;
   onUpdateEmailSummary?: (emailId: string, summary: any) => void;
   userAvatar?: string;
+  onBack?: () => void;
 }
 
 export const EmailDetail: React.FC<EmailDetailProps> = ({
@@ -28,7 +30,8 @@ export const EmailDetail: React.FC<EmailDetailProps> = ({
   onAskAIAboutEmail,
   onSelectSuggestionChip,
   onUpdateEmailSummary,
-  userAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+  userAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+  onBack
 }) => {
   const [replyText, setReplyText] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -131,10 +134,11 @@ export const EmailDetail: React.FC<EmailDetailProps> = ({
 
   return (
     <div id="email-detail-pane" className="flex-1 bg-white flex flex-col h-full overflow-y-auto">
-      <div className="max-w-4xl w-full mx-auto p-6 md:p-8 space-y-6 flex-1 flex flex-col">
+      <div className="max-w-4xl w-full mx-auto p-4 sm:p-6 md:p-8 space-y-5 md:space-y-6 flex-1 flex flex-col pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <button onClick={onBack} className="-ml-2 inline-flex h-11 w-fit items-center gap-2 rounded-xl px-2 text-sm font-semibold text-blue-700 md:hidden"><ArrowLeft className="h-5 w-5" />Inbox</button>
         {/* Email Header */}
         <div className="flex items-start justify-between gap-4">
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight leading-tight">
+          <h1 className="min-w-0 text-xl sm:text-2xl font-bold text-slate-900 tracking-tight leading-tight break-words">
             {email.subject || '(No Subject)'}
           </h1>
 
