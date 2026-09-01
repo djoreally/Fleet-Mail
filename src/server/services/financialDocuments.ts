@@ -1,6 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { getDb } from '../../db/index.js';
-import { customers, documents, estimates, invoices, payments, workOrders } from '../../db/drizzleSchema.js';
+import { customers, documents, estimates, fluidUsage, invoiceLineItems, invoices, partUsage, parts, payments, serviceLines, workOrders } from '../../db/drizzleSchema.js';
 
 export class FinancialDocumentsError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -64,10 +65,22 @@ export async function createInvoice(organizationId: string, input: InvoiceInput)
     const [workOrder] = await db().select({ id: workOrders.id }).from(workOrders).where(and(eq(workOrders.organizationId, organizationId), eq(workOrders.id, input.workOrderId))).limit(1);
     if (!workOrder) throw new FinancialDocumentsError(400, 'Work order is not in the active organization');
   }
-  const subtotal = Number(input.subtotal || 0), tax = Number(input.tax || 0), total = subtotal + tax;
-  const [row] = await db().insert(invoices).values({ organizationId, customerId: customer.id, workOrderId: input.workOrderId || null, number: input.number,
+  const database = db();
+  const serviceRows = input.workOrderId ? await database.select().from(serviceLines).where(and(eq(serviceLines.organizationId, organizationId), eq(serviceLines.workOrderId, input.workOrderId))) : [];
+  const partRows = input.workOrderId ? await database.select({ usage: partUsage, name: parts.name, sku: parts.sku, defaultPrice: parts.unitPrice }).from(partUsage).innerJoin(parts, eq(parts.id, partUsage.partId)).where(and(eq(partUsage.organizationId, organizationId), eq(partUsage.workOrderId, input.workOrderId))) : [];
+  const fluidRows = input.workOrderId ? await database.select().from(fluidUsage).where(and(eq(fluidUsage.organizationId, organizationId), eq(fluidUsage.workOrderId, input.workOrderId))) : [];
+  const lines = [
+    ...serviceRows.map(item => ({ kind: item.kind, description: item.description, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice) })),
+    ...partRows.map(({ usage, name, sku, defaultPrice }) => ({ kind: 'part', description: `${sku} · ${name}`, quantity: Number(usage.quantity), unitPrice: Number(usage.sellPrice ?? defaultPrice ?? 0) })),
+    ...fluidRows.map(item => ({ kind: 'fluid', description: [item.name, item.viscosity, item.specification].filter(Boolean).join(' · '), quantity: Number(item.quantity), unitPrice: Number(item.sellPrice ?? 0) })),
+  ];
+  const derivedSubtotal = lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
+  const subtotal = input.subtotal == null ? derivedSubtotal : Number(input.subtotal);
+  const tax = Number(input.tax || 0), total = subtotal + tax;
+  const [row] = await database.insert(invoices).values({ organizationId, customerId: customer.id, workOrderId: input.workOrderId || null, number: input.number,
     status: input.status || 'draft', subtotal: String(subtotal), tax: String(tax), total: String(total), balanceDue: String(total),
     dueAt: input.dueAt ? new Date(input.dueAt) : null, purchaseOrderNumber: input.purchaseOrderNumber || null }).returning();
+  if (lines.length) await database.insert(invoiceLineItems).values(lines.map((line, position) => ({ id: randomUUID(), organizationId, invoiceId: row.id, kind: line.kind, description: line.description, quantity: String(line.quantity), unitPrice: String(line.unitPrice), lineTotal: String(line.quantity * line.unitPrice), position })));
   return row;
 }
 

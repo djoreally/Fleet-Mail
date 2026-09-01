@@ -1,7 +1,7 @@
 import { Pool } from '@neondatabase/serverless';
 import { randomUUID } from 'node:crypto';
 
-export type VehicleStatus = 'active' | 'in_service' | 'out_of_service';
+export type VehicleStatus = 'active' | 'down' | 'out_of_service' | 'retired';
 
 export interface VehicleInput {
   id?: string;
@@ -12,14 +12,23 @@ export interface VehicleInput {
   model?: string | null;
   engine?: string | null;
   mileage?: number | null;
+  engineHours?: number | null;
   status?: VehicleStatus;
   trim?: string | null;
+  fuelType?: string | null;
+  licensePlate?: string | null;
+  registrationState?: string | null;
+  assignedDriver?: string | null;
+  department?: string | null;
+  inServiceDate?: string | null;
+  notes?: string | null;
+  specifications?: Record<string, unknown> | null;
   type?: string | null;
   assignment?: string | null;
 }
 
 const VIN_PATTERN = /^[A-HJ-NPR-Z0-9]{17}$/;
-const statuses = new Set<VehicleStatus>(['active', 'in_service', 'out_of_service']);
+const statuses = new Set<VehicleStatus>(['active', 'down', 'out_of_service', 'retired']);
 
 function databaseUrl(): string {
   const value = process.env.DATABASE_URL || process.env.NEON_DATABASE_URL;
@@ -36,18 +45,28 @@ function normalize(input: VehicleInput): Required<Omit<VehicleInput, 'id'>> {
   const vin = input.vin ? String(input.vin).trim().toUpperCase() : null;
   const year = input.year === null || input.year === undefined || input.year === 0 ? null : Number(input.year);
   const mileage = input.mileage === null || input.mileage === undefined ? 0 : Number(input.mileage);
+  const engineHours = input.engineHours === null || input.engineHours === undefined ? null : Number(input.engineHours);
   const status = input.status || 'active';
   if (!unitNumber) throw new VehicleStoreError('Unit number is required');
   if (vin && !VIN_PATTERN.test(vin)) throw new VehicleStoreError('VIN must be 17 characters and cannot contain I, O, or Q');
   if (year !== null && (!Number.isInteger(year) || year < 1886 || year > new Date().getFullYear() + 2)) throw new VehicleStoreError('Vehicle year is invalid');
   if (!Number.isInteger(mileage) || mileage < 0) throw new VehicleStoreError('Mileage must be a non-negative whole number');
+  if (engineHours !== null && (!Number.isInteger(engineHours) || engineHours < 0)) throw new VehicleStoreError('Engine hours must be a non-negative whole number');
   if (!statuses.has(status)) throw new VehicleStoreError('Vehicle status is invalid');
   return {
-    unitNumber, vin, year, mileage, status,
+    unitNumber, vin, year, mileage, engineHours, status,
     make: input.make?.trim() || null,
     model: input.model?.trim() || null,
     engine: input.engine?.trim() || null,
     trim: input.trim?.trim() || null,
+    fuelType: input.fuelType?.trim() || null,
+    licensePlate: input.licensePlate?.trim() || null,
+    registrationState: input.registrationState?.trim() || null,
+    assignedDriver: input.assignedDriver?.trim() || null,
+    department: input.department?.trim() || null,
+    inServiceDate: input.inServiceDate?.trim() || null,
+    notes: input.notes?.trim() || null,
+    specifications: input.specifications || {},
     type: input.type?.trim() || null,
     assignment: input.assignment?.trim() || null,
   };
@@ -74,7 +93,7 @@ async function resolveOrganizationId(pool: Pool, requested?: string): Promise<st
   throw new VehicleStoreError('Organization context is required', 401);
 }
 
-const selectColumns = `id, organization_id, unit_number, vin, year, make, model, engine, mileage, status,
+const selectColumns = `id, organization_id, unit_number, vin, year, make, model, trim, engine, fuel_type, license_plate, registration_state, mileage, engine_hours, status, assigned_driver, department, in_service_date, notes, specifications,
   metadata, created_at, updated_at`;
 
 export async function listVehicles(requestedOrganizationId?: string) {
@@ -87,12 +106,12 @@ export async function listVehicles(requestedOrganizationId?: string) {
 
 async function insertVehicle(pool: Queryable, organizationId: string, raw: VehicleInput) {
   const value = normalize(raw);
-  const metadata = { trim: value.trim, type: value.type, assignment: value.assignment };
+  const metadata = { type: value.type, assignment: value.assignment };
   try {
     const result = await pool.query(`INSERT INTO vehicles
-      (id, organization_id, unit_number, vin, year, make, model, engine, mileage, status, metadata)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb) RETURNING ${selectColumns}`,
-      [randomUUID(), organizationId, value.unitNumber, value.vin, value.year, value.make, value.model, value.engine, value.mileage, value.status, JSON.stringify(metadata)]);
+      (id, organization_id, unit_number, vin, year, make, model, trim, engine, fuel_type, license_plate, registration_state, mileage, engine_hours, status, assigned_driver, department, in_service_date, notes, specifications, metadata)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::timestamptz,$19,$20::jsonb,$21::jsonb) RETURNING ${selectColumns}`,
+      [randomUUID(), organizationId, value.unitNumber, value.vin, value.year, value.make, value.model, value.trim, value.engine, value.fuelType, value.licensePlate, value.registrationState, value.mileage, value.engineHours, value.status, value.assignedDriver, value.department, value.inServiceDate, value.notes, JSON.stringify(value.specifications), JSON.stringify(metadata)]);
     return result.rows[0];
   } catch (error) {
     if (error instanceof Error && /unique|duplicate/i.test(error.message)) throw new VehicleStoreError(`Unit ${value.unitNumber} already exists`, 409);
@@ -131,11 +150,11 @@ export async function updateVehicle(id: string, raw: VehicleInput, requestedOrga
   return withPool(async pool => {
     const organizationId = await resolveOrganizationId(pool, requestedOrganizationId);
     const value = normalize(raw);
-    const metadata = { trim: value.trim, type: value.type, assignment: value.assignment };
-    const result = await pool.query(`UPDATE vehicles SET unit_number=$3, vin=$4, year=$5, make=$6, model=$7,
-      engine=$8, mileage=$9, status=$10, metadata=$11::jsonb, updated_at=NOW()
+    const metadata = { type: value.type, assignment: value.assignment };
+    const result = await pool.query(`UPDATE vehicles SET unit_number=$3, vin=$4, year=$5, make=$6, model=$7, trim=$8, engine=$9, fuel_type=$10, license_plate=$11, registration_state=$12,
+      mileage=$13, engine_hours=$14, status=$15, assigned_driver=$16, department=$17, in_service_date=$18::timestamptz, notes=$19, specifications=$20::jsonb, metadata=$21::jsonb, updated_at=NOW()
       WHERE organization_id=$1 AND id=$2 RETURNING ${selectColumns}`,
-      [organizationId, id, value.unitNumber, value.vin, value.year, value.make, value.model, value.engine, value.mileage, value.status, JSON.stringify(metadata)]);
+      [organizationId, id, value.unitNumber, value.vin, value.year, value.make, value.model, value.trim, value.engine, value.fuelType, value.licensePlate, value.registrationState, value.mileage, value.engineHours, value.status, value.assignedDriver, value.department, value.inServiceDate, value.notes, JSON.stringify(value.specifications), JSON.stringify(metadata)]);
     if (!result.rows[0]) throw new VehicleStoreError('Vehicle not found', 404);
     return result.rows[0];
   });
