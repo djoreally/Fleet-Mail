@@ -101,6 +101,16 @@ apiRouter.get('/agent/skills', (_req, res) => {
 apiRouter.post('/chat', async (req, res) => {
   try {
     const { messages, contextInbox, activeEmail, personality = 'Professional' } = req.body;
+    const rawAttachments = Array.isArray(req.body?.attachments) ? req.body.attachments.slice(0, 4) : [];
+    const attachmentBytes = rawAttachments.reduce((sum: number, file: any) => sum + Number(file?.size || 0), 0);
+    if (attachmentBytes > 3_000_000) return res.status(413).json({ error: 'Attachments must total 3 MB or less.' });
+    const attachments = rawAttachments.map((file: any) => ({
+      name: String(file?.name || 'attachment').slice(0, 180),
+      type: String(file?.type || 'application/octet-stream').slice(0, 100),
+      kind: file?.kind === 'image' ? 'image' : 'document',
+      text: typeof file?.text === 'string' ? redactSensitiveData(file.text.slice(0, 20_000)) : '',
+      dataUrl: typeof file?.dataUrl === 'string' && /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(file.dataUrl) ? file.dataUrl : '',
+    }));
 
     let recentInbox: any[] = [];
     try {
@@ -124,7 +134,7 @@ apiRouter.post('/chat', async (req, res) => {
       else if (process.env.FIRECRAWL_API_KEY?.trim()) websiteResearch = await crawlWebsite(websiteUrl);
       else throw new Error('Website research is not configured.');
     }
-    const groundedContext = redactObject({ selectedEmail: activeEmail || null, recentInbox, contacts: contactContext, websiteResearch, browserResearch });
+    const groundedContext = redactObject({ selectedEmail: activeEmail || null, recentInbox, contacts: contactContext, websiteResearch, browserResearch, attachedDocuments: attachments.filter((file: any) => file.text).map((file: any) => ({ name: file.name, type: file.type, text: file.text })) });
 
     const systemPrompt = `You are "ChatMail AI" powered by AtlasCloud's dots-studio/dots-3-note-prev-free model.
 You are an intelligent, proactive executive email copilot and communication assistant managing inbox "${contextInbox || DEFAULT_INBOX}".
@@ -172,6 +182,11 @@ ${activeEmail ? `- Selected Email Context:
 Respond helpfully, clearly, and proactively.`;
 
     const safeMessages = (Array.isArray(messages) ? messages : []).map((message: any) => ({ ...message, content: redactSensitiveData(String(message.content || '')) }));
+    const imageParts = attachments.filter((file: any) => file.dataUrl).map((file: any) => ({ type: 'image_url' as const, image_url: { url: file.dataUrl } }));
+    if (imageParts.length && safeMessages.length) {
+      const latest = safeMessages.length - 1;
+      safeMessages[latest] = { ...safeMessages[latest], content: [{ type: 'text' as const, text: safeMessages[latest].content }, ...imageParts] };
+    }
     const aiResult = await callAICompletion(safeMessages, systemPrompt);
 
     // Check if there's an email draft block in the response
