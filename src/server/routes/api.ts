@@ -46,7 +46,7 @@ const { atlasCloudBaseUrl: ATLASCLOUD_BASE_URL, atlasCloudModel: ATLASCLOUD_MODE
 
 apiRouter.post('/vehicles/decode-vin', async (req, res) => {
   try {
-    const decoded = await decodeVin(req.body ?? {});
+    const decoded = await decodeVin({ ...(req.body ?? {}), vin: req.body?.vin || req.query.vin, modelYear: req.body?.modelYear || req.query.modelYear });
     return res.json({ decoded });
   } catch (error) {
     const status = error instanceof NhtsaError ? error.status : 500;
@@ -76,7 +76,7 @@ apiRouter.get('/status', (req, res) => {
   res.json({
     atlasCloudConfigured: Boolean(atlasKey && atlasKey !== 'your-atlascloud-api-key' && atlasKey.trim() !== ''),
     agentMailConfigured: Boolean(agentKey && agentKey !== 'your-agentmail-api-key' && agentKey.trim() !== ''),
-    neonConfigured: Boolean(process.env.DATABASE_URL || process.env.NEON_DATABASE_URL),
+    neonConfigured: Boolean(NEON_DATA_API_URL && NEON_AUTH_URL),
     googleConfigured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_TOKEN_ENCRYPTION_KEY),
     neonDataApiUrl: NEON_DATA_API_URL,
     neonAuthUrl: NEON_AUTH_URL,
