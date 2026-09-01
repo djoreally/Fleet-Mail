@@ -194,7 +194,8 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
     if (!VIN_PATTERN.test(draft.vin)) { setDecodeState('error'); setDecodeMessage('Enter a valid 17-character VIN. Letters I, O, and Q are not used.'); return; }
     setDecodeState('loading'); setDecodeMessage('');
     try {
-      const response = await fleetFetch('/api/vehicles/decode-vin', {
+      const params = new URLSearchParams({ vin: draft.vin, ...(draft.year ? { modelYear: draft.year } : {}) });
+      const response = await fleetFetch(`/api/vehicles/decode-vin?${params}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vin: draft.vin, modelYear: draft.year || undefined })
