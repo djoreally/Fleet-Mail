@@ -1,6 +1,6 @@
 import { fleetFetch } from '../../lib/fleetApi';
 
-export type CustomerRow = { id:string; name:string; accountNumber?:string|null; billingEmail?:string|null; phone?:string|null; notes?:string|null; status:string; vehicleCount:number; primaryContact?:string|null; contactEmail?:string|null; spend30Days:string };
+export type CustomerRow = { id:string; name:string; accountNumber?:string|null; primaryContactName?:string|null; primaryContactEmail?:string|null; billingContactName?:string|null; billingEmail?:string|null; billingAddress?:Record<string,string>|null; poRequired?:boolean; defaultPoNumber?:string|null; paymentTerms?:string; taxStatus?:string; phone?:string|null; notes?:string|null; status:string; vehicleCount:number; primaryContact?:string|null; contactEmail?:string|null; spend30Days:string };
 export type PartRow = { id:string; sku:string; name:string; description?:string|null; unitCost?:string|null; unitPrice?:string|null; quantity:string; reorderPoint:string };
 
 async function request<T>(path:string, init?:RequestInit):Promise<T> {
