@@ -36,6 +36,8 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [mobileEmailOpen, setMobileEmailOpen] = useState(false);
 
   // Modals & Notifications
   const [isComposeOpen, setIsComposeOpen] = useState<boolean>(false);
@@ -436,7 +438,8 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
   const draftsCount = 0;
 
   return (
-    <div className="h-screen w-screen flex bg-white text-slate-900 overflow-hidden font-sans select-none antialiased">
+    <div className="h-[100dvh] w-full flex bg-white text-slate-900 overflow-hidden font-sans select-none antialiased">
+      {mobileNavOpen && <button aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} className="fixed inset-0 z-40 bg-slate-950/45 backdrop-blur-[1px] lg:hidden" />}
       {/* Left Navigation Sidebar */}
       <Sidebar
         currentTab={currentTab}
@@ -452,10 +455,12 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
         userEmail={userEmail || activeInbox}
         userName={userName || userEmail?.split('@')[0] || 'Fleet User'}
         onSignOut={onSignOut}
+        mobileOpen={mobileNavOpen}
+        onMobileClose={() => setMobileNavOpen(false)}
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden bg-white">
+      <div className="min-w-0 flex-1 flex flex-col h-full overflow-hidden bg-white">
         {/* Top Header */}
         <Header
           searchQuery={searchQuery}
@@ -465,33 +470,36 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
           onOpenSettings={() => setCurrentTab('settings')}
           pageTitle={currentTab === 'contacts' ? 'Contacts' : currentTab === 'settings' ? 'Settings' : undefined}
           userAvatar="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"
+          onOpenMenu={() => setMobileNavOpen(true)}
         />
 
         {/* View Switcher */}
         <div className="flex-1 flex overflow-hidden">
           {/* 1. Inbox / Sent / Drafts View (2-Column Split) */}
           {(currentTab === 'inbox' || currentTab === 'sent' || currentTab === 'drafts') && (
-            <div className="flex-1 flex w-full h-full overflow-hidden">
-              <EmailList
+            <div className="flex-1 flex w-full h-full min-w-0 overflow-hidden">
+              <div className={`${mobileEmailOpen ? 'hidden' : 'flex'} h-full w-full md:flex md:w-auto`}><EmailList
                 emails={displayedEmails}
                 selectedEmailId={selectedEmailId}
                 onSelectEmail={(email) => {
                   setSelectedEmailId(email.id);
+                  setMobileEmailOpen(true);
                   setEmails(prev => prev.map(e => e.id === email.id ? { ...e, read: true } : e));
                 }}
                 folderTitle={currentTab === 'inbox' ? 'Inbox' : currentTab === 'sent' ? 'Sent' : 'Drafts'}
                 onRefresh={() => fetchEmails(false)}
                 isRefreshing={isRefreshing}
                 activeInbox={activeInbox}
-              />
+              /></div>
 
-              <EmailDetail
+              <div className={`${mobileEmailOpen ? 'flex' : 'hidden'} min-w-0 flex-1 md:flex`}><EmailDetail
                 email={selectedEmail}
                 onSendReply={handleSendReply}
                 onAskAIAboutEmail={handleAskAIAboutEmail}
                 onUpdateEmailSummary={handleUpdateEmailSummary}
                 userAvatar="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"
-              />
+                onBack={() => setMobileEmailOpen(false)}
+              /></div>
             </div>
           )}
 
