@@ -11,6 +11,10 @@ export interface BrowserbasePage {
   provider?: 'firecrawl' | 'browserbase';
 }
 
+/**
+ * Explicit Browserbase access. This is intentionally NOT a research fallback.
+ * Use it only for a user-requested browser interaction or a browser-only workflow.
+ */
 export async function fetchWithBrowserbaseDirect(rawUrl: string, urlValidator: typeof validatePublicUrl = validatePublicUrl): Promise<BrowserbasePage> {
   const apiKey = process.env.BROWSERBASE_API_KEY?.trim();
   if (!apiKey) throw new Error('Browser access is not configured yet. Add BROWSERBASE_API_KEY to the production environment.');
@@ -42,33 +46,31 @@ export async function fetchWithBrowserbaseDirect(rawUrl: string, urlValidator: t
 }
 
 /**
- * Compatibility research entry point used by the current chat route.
- * Firecrawl is intentionally the primary information-gathering tool.
- * Browserbase is used only as a research fallback when Firecrawl is not configured.
- * Explicit interactive browser tasks should call fetchWithBrowserbaseDirect (or a future
- * Stagehand/Playwright browser-action service) instead of this function.
+ * Legacy-named compatibility entry point used by the current chat research route.
+ * Despite the historical name, this path is Firecrawl-only. Browserbase must never
+ * silently substitute for information gathering; explicit browser tasks use
+ * fetchWithBrowserbaseDirect or the interactive browser-action service.
  */
 export async function fetchWithBrowserbase(
   rawUrl: string,
-  urlValidator: typeof validatePublicUrl = validatePublicUrl,
+  _urlValidator: typeof validatePublicUrl = validatePublicUrl,
   crawler: typeof crawlWebsite = crawlWebsite,
 ): Promise<BrowserbasePage> {
-  if (process.env.FIRECRAWL_API_KEY?.trim()) {
-    const result = await crawler(rawUrl);
-    const content = result.pages
-      .map((page) => `${page.title}\n${page.url}\n${page.content}`)
-      .join('\n\n')
-      .slice(0, 24_000);
-    if (!content.trim()) throw new Error('Firecrawl completed, but no readable content was returned.');
-    return {
-      sourceUrl: result.sourceUrl,
-      requestId: 'firecrawl-research',
-      statusCode: 200,
-      contentType: 'text/markdown',
-      content,
-      provider: 'firecrawl',
-    };
+  if (!process.env.FIRECRAWL_API_KEY?.trim()) {
+    throw new Error('Website research is not configured. Add FIRECRAWL_API_KEY; Browserbase is reserved for explicit browser actions.');
   }
-
-  return fetchWithBrowserbaseDirect(rawUrl, urlValidator);
+  const result = await crawler(rawUrl);
+  const content = result.pages
+    .map((page) => `${page.title}\n${page.url}\n${page.content}`)
+    .join('\n\n')
+    .slice(0, 24_000);
+  if (!content.trim()) throw new Error('Firecrawl completed, but no readable content was returned.');
+  return {
+    sourceUrl: result.sourceUrl,
+    requestId: 'firecrawl-research',
+    statusCode: 200,
+    contentType: 'text/markdown',
+    content,
+    provider: 'firecrawl',
+  };
 }
