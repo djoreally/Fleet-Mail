@@ -3,7 +3,7 @@ import { Pool } from '@neondatabase/serverless';
 import { and, desc, eq, ilike, or } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
 import { prospectActivities, prospectContacts, prospects } from '../../db/prospectSchema.js';
-import { crawlWebsite } from './firecrawl.js';
+import { crawlWebsite, searchWeb } from './firecrawl.js';
 import { callAICompletion } from './ai.js';
 
 function database() { const db=getDb(); if(!db) throw new Error('Database is not configured'); return db; }
@@ -15,6 +15,8 @@ const STAGES=new Set(['new','researching','qualified','outreach','engaged','meet
 function cleanWebsite(value:unknown){const raw=optional(value,1000);if(!raw)return null;try{const u=new URL(/^https?:\/\//i.test(raw)?raw:`https://${raw}`);if(!['http:','https:'].includes(u.protocol))throw new Error();return u.toString();}catch{throw new Error('Website must be a valid public URL')}}
 function jsonObject(value:unknown){return value&&typeof value==='object'&&!Array.isArray(value)?value:{};}
 function stringArray(value:unknown,max=30){return Array.isArray(value)?value.slice(0,max).map(v=>String(v).trim()).filter(Boolean):[];}
+function host(value:string){try{return new URL(value).hostname.replace(/^www\./,'').toLowerCase();}catch{return '';}}
+const BLOCKED_HOSTS=new Set(['facebook.com','instagram.com','linkedin.com','youtube.com','yelp.com','mapquest.com','yellowpages.com','indeed.com','glassdoor.com']);
 
 export class ProspectingService {
  async list(organizationId:string, options:{search?:string;stage?:string}={}){
@@ -50,15 +52,26 @@ export class ProspectingService {
  async addActivity(organizationId:string,prospectId:string,input:Record<string,unknown>){
   await this.get(organizationId,prospectId);const [row]=await database().insert(prospectActivities).values({id:randomUUID(),organizationId,prospectId,kind:required(input.kind,'Activity kind',100),direction:optional(input.direction,30),channel:optional(input.channel,50),subject:optional(input.subject,1000),summary:optional(input.summary,10000),externalMessageId:optional(input.externalMessageId,300),occurredAt:input.occurredAt?new Date(String(input.occurredAt)):new Date(),metadata:jsonObject(input.metadata)}).returning();return row;
  }
+ async discover(organizationId:string,input:Record<string,unknown>){
+  const location=required(input.location,'Location',200);const industry=optional(input.industry,200)||'commercial businesses';const limit=bounded(input.limit,1,20,10);
+  const query=optional(input.query,500)||`${industry} ${location} fleet vehicles company`;
+  const results=await searchWeb(query,Math.min(20,limit*2));const existing=await this.list(organizationId);const known=new Set(existing.map(p=>p.website?host(p.website):'').filter(Boolean));const created:any[]=[];
+  for(const result of results){if(created.length>=limit)break;const domain=host(result.url);if(!domain||BLOCKED_HOSTS.has(domain)||[...BLOCKED_HOSTS].some(x=>domain.endsWith(`.${x}`))||known.has(domain))continue;
+   let website:string;try{website=cleanWebsite(result.url)!;}catch{continue;}const title=(result.title||domain).replace(/\s*[|–—-].*$/,'').trim().slice(0,300)||domain;
+   const row=await this.create(organizationId,{companyName:title,website,industry,serviceArea:location,source:'firecrawl_search',sourceUrl:result.url,notes:result.description,metadata:{discoveryQuery:query,discoveryDescription:result.description}});known.add(domain);created.push(row);
+  }
+  return {query,discovered:created,skipped:Math.max(0,results.length-created.length)};
+ }
  async research(organizationId:string,prospectId:string){
   const detail=await this.get(organizationId,prospectId);const website=detail.prospect.website;if(!website)throw new Error('Prospect website is required for research');
   await database().update(prospects).set({stage:detail.prospect.stage==='new'?'researching':detail.prospect.stage,updatedAt:new Date()}).where(and(eq(prospects.organizationId,organizationId),eq(prospects.id,prospectId)));
   const crawled=await crawlWebsite(website);const evidence=crawled.pages.slice(0,8).map(p=>({url:p.url,title:p.title,content:p.content.slice(0,6000)}));
-  const prompt=`Analyze this company's public website for B2B fleet-service prospecting. Use only the supplied evidence. Return valid JSON with keys: summary (string), industry (string|null), estimatedFleetSize (integer|null), vehicleTypes (string[]), serviceArea (string|null), fleetEvidence (array of concise evidence strings), qualificationScore (0-100 integer), qualificationReason (string). Do not invent fleet size; use null when unsupported.\nCompany: ${detail.prospect.companyName}\nEvidence: ${JSON.stringify(evidence)}`;
+  const prompt=`Analyze this company's public website for B2B fleet-service prospecting. Use only the supplied evidence. Return valid JSON with keys: summary (string), industry (string|null), estimatedFleetSize (integer|null), vehicleTypes (string[]), serviceArea (string|null), fleetEvidence (array of concise evidence strings), qualificationScore (0-100 integer), qualificationReason (string). Score fleet fit using evidence of company-owned vehicles, field crews, delivery/service routes, multiple locations, vehicle-heavy operations, and recurring maintenance need. Do not invent fleet size; use null when unsupported.\nCompany: ${detail.prospect.companyName}\nEvidence: ${JSON.stringify(evidence)}`;
   const ai=await callAICompletion([{role:'user',content:prompt}],'You extract grounded fleet-sales intelligence from supplied public website evidence. Output JSON only.');
   let parsed:any={};try{parsed=JSON.parse(ai.content.replace(/^```json\s*/,'').replace(/\s*```$/,''));}catch{parsed={summary:ai.content.slice(0,5000),qualificationScore:0,fleetEvidence:[]};}
   const sources=evidence.map(p=>({url:p.url,title:p.title}));
-  const [updated]=await database().update(prospects).set({researchSummary:optional(parsed.summary,10000),industry:optional(parsed.industry,200)??detail.prospect.industry,estimatedFleetSize:parsed.estimatedFleetSize==null?detail.prospect.estimatedFleetSize:bounded(parsed.estimatedFleetSize,0,100000,0),vehicleTypes:stringArray(parsed.vehicleTypes),serviceArea:optional(parsed.serviceArea,500)??detail.prospect.serviceArea,fleetEvidence:Array.isArray(parsed.fleetEvidence)?parsed.fleetEvidence.slice(0,30):[],researchSources:sources,lastResearchedAt:new Date(),qualificationScore:bounded(parsed.qualificationScore,0,100,0),metadata:{...(detail.prospect.metadata as Record<string,unknown>),qualificationReason:optional(parsed.qualificationReason,5000)},stage:detail.prospect.stage==='new'||detail.prospect.stage==='researching'?'qualified':detail.prospect.stage,updatedAt:new Date()}).where(and(eq(prospects.organizationId,organizationId),eq(prospects.id,prospectId))).returning();
+  const score=bounded(parsed.qualificationScore,0,100,0);const nextStage=score>=40?'qualified':'researching';
+  const [updated]=await database().update(prospects).set({researchSummary:optional(parsed.summary,10000),industry:optional(parsed.industry,200)??detail.prospect.industry,estimatedFleetSize:parsed.estimatedFleetSize==null?detail.prospect.estimatedFleetSize:bounded(parsed.estimatedFleetSize,0,100000,0),vehicleTypes:stringArray(parsed.vehicleTypes),serviceArea:optional(parsed.serviceArea,500)??detail.prospect.serviceArea,fleetEvidence:Array.isArray(parsed.fleetEvidence)?parsed.fleetEvidence.slice(0,30):[],researchSources:sources,lastResearchedAt:new Date(),qualificationScore:score,metadata:{...(detail.prospect.metadata as Record<string,unknown>),qualificationReason:optional(parsed.qualificationReason,5000)},stage:detail.prospect.stage==='new'||detail.prospect.stage==='researching'?nextStage:detail.prospect.stage,updatedAt:new Date()}).where(and(eq(prospects.organizationId,organizationId),eq(prospects.id,prospectId))).returning();
   await this.addActivity(organizationId,prospectId,{kind:'research',channel:'firecrawl',summary:`Researched ${sources.length} public pages. Qualification score: ${updated.qualificationScore}.`,metadata:{sources}});return updated;
  }
  async convertToFleetAccount(organizationId:string,prospectId:string){

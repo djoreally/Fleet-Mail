@@ -7,6 +7,7 @@ const PRIVATE_V6 = /^(?:::1$|f[cd][0-9a-f]{2}:|fe[89ab][0-9a-f]:)/i;
 
 export interface CrawledPage { url: string; title: string; content: string; }
 export interface CrawlResult { sourceUrl: string; pages: CrawledPage[]; }
+export interface SearchResult { url: string; title: string; description: string; }
 
 function blockedAddress(address: string) {
   return isIP(address) === 4 ? PRIVATE_V4.test(address) : isIP(address) === 6 ? PRIVATE_V6.test(address) : true;
@@ -29,6 +30,18 @@ async function firecrawl(path: string, init?: RequestInit) {
   const body = await response.json().catch(() => ({})) as any;
   if (!response.ok) throw new Error(body.error || `Firecrawl request failed (${response.status}).`);
   return body;
+}
+
+export async function searchWeb(query: string, limit = 10): Promise<SearchResult[]> {
+  const q = query.trim().slice(0, 500);
+  if (!q) throw new Error('Search query is required.');
+  const body = await firecrawl('/search', { method: 'POST', body: JSON.stringify({ query: q, limit: Math.min(20, Math.max(1, limit)), sources: ['web'] }) });
+  const rows = Array.isArray(body.data) ? body.data : Array.isArray(body.data?.web) ? body.data.web : [];
+  return rows.map((row: any) => ({
+    url: String(row.url || row.sourceURL || '').trim(),
+    title: String(row.title || '').trim(),
+    description: String(row.description || row.snippet || '').trim().slice(0, 2000),
+  })).filter((row: SearchResult) => /^https:\/\//i.test(row.url));
 }
 
 export async function crawlWebsite(rawUrl: string): Promise<CrawlResult> {
