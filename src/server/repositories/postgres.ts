@@ -4,8 +4,8 @@ import type {
   FleetRepositories, OrganizationId, PageRequest, SummaryRecord, SummaryRepository, SummaryWrite,
   ThreadRecord, ThreadRepository, ThreadWrite, VehicleRecord, VehicleRepository, VehicleWrite,
   WorkOrderRecord, WorkOrderRepository, WorkOrderWrite,
-} from './contracts';
-import { pageValues, requireOrganizationId, type SqlExecutor, type TransactionalSqlExecutor } from './sql';
+} from './contracts.js';
+import { pageValues, requireOrganizationId, type SqlExecutor, type TransactionalSqlExecutor } from './sql.js';
 
 type Row = Record<string, unknown>;
 
