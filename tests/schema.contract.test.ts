@@ -10,6 +10,9 @@ const tenantTables = [
   schema.dispatchAssignments,
   schema.maintenanceSchedules,
   schema.invoices,
+  schema.inspectionItems,
+  schema.fluidUsage,
+  schema.serviceLines,
   schema.documents,
   schema.emails
 ];
@@ -23,6 +26,9 @@ describe('Fleet OS schema contract', () => {
     expect(schema.appointments).toBeDefined();
     expect(schema.dispatchAssignments).toBeDefined();
     expect(schema.inspections).toBeDefined();
+    expect(schema.inspectionItems).toBeDefined();
+    expect(schema.fluidUsage).toBeDefined();
+    expect(schema.serviceLines).toBeDefined();
     expect(schema.authorizations).toBeDefined();
     expect(schema.invoices).toBeDefined();
   });

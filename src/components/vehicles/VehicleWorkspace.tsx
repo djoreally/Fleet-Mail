@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { fleetFetch } from '../../lib/fleetApi';
 
-type VehicleStatus = 'Active' | 'In service' | 'Out of service';
+type VehicleStatus = 'Active' | 'Down' | 'Out of service' | 'Retired';
 
 interface Vehicle {
   id: string;
@@ -29,6 +29,14 @@ interface Vehicle {
   trim?: string;
   type: string;
   mileage: string;
+  engineHours: string;
+  engine?: string;
+  fuelType?: string;
+  licensePlate?: string;
+  registrationState?: string;
+  assignedDriver?: string;
+  department?: string;
+  notes?: string;
   assignment: string;
   status: VehicleStatus;
 }
@@ -42,6 +50,14 @@ interface VehicleDraft {
   trim: string;
   type: string;
   mileage: string;
+  engineHours: string;
+  engine: string;
+  fuelType: string;
+  licensePlate: string;
+  registrationState: string;
+  assignedDriver: string;
+  department: string;
+  notes: string;
   assignment: string;
 }
 
@@ -79,7 +95,15 @@ interface StoredVehicle {
   make: string | null;
   model: string | null;
   mileage: number | null;
-  status: 'active' | 'in_service' | 'out_of_service';
+  engine_hours?: number | null;
+  engine?: string | null;
+  fuel_type?: string | null;
+  license_plate?: string | null;
+  registration_state?: string | null;
+  assigned_driver?: string | null;
+  department?: string | null;
+  notes?: string | null;
+  status: 'active' | 'down' | 'out_of_service' | 'retired';
   metadata?: { trim?: string | null; type?: string | null; assignment?: string | null } | null;
 }
 
@@ -92,25 +116,26 @@ const fromStoredVehicle = (vehicle: StoredVehicle): Vehicle => ({
   model: vehicle.model || '',
   trim: vehicle.metadata?.trim || '',
   type: vehicle.metadata?.type || '',
-  mileage: (vehicle.mileage || 0).toLocaleString(),
+  mileage: (vehicle.mileage || 0).toLocaleString(), engineHours: vehicle.engine_hours == null ? '' : String(vehicle.engine_hours),
+  engine: vehicle.engine || '', fuelType: vehicle.fuel_type || '', licensePlate: vehicle.license_plate || '', registrationState: vehicle.registration_state || '', assignedDriver: vehicle.assigned_driver || '', department: vehicle.department || '', notes: vehicle.notes || '',
   assignment: vehicle.metadata?.assignment || '',
-  status: vehicle.status === 'in_service' ? 'In service' : vehicle.status === 'out_of_service' ? 'Out of service' : 'Active',
+  status: vehicle.status === 'down' ? 'Down' : vehicle.status === 'out_of_service' ? 'Out of service' : vehicle.status === 'retired' ? 'Retired' : 'Active',
 });
 
-const toStoredInput = (vehicle: VehicleDraft) => ({
+const toStoredInput = (vehicle: VehicleDraft, status: VehicleStatus = 'Active') => ({
   unitNumber: vehicle.unit,
   vin: vehicle.vin || null,
   year: vehicle.year ? Number(vehicle.year) : null,
   make: vehicle.make || null,
   model: vehicle.model || null,
-  mileage: vehicle.mileage ? Number(vehicle.mileage.replace(/,/g, '')) : 0,
-  status: 'active',
+  mileage: vehicle.mileage ? Number(vehicle.mileage.replace(/,/g, '')) : 0, engineHours: vehicle.engineHours ? Number(vehicle.engineHours) : null, engine: vehicle.engine || null, fuelType: vehicle.fuelType || null, licensePlate: vehicle.licensePlate || null, registrationState: vehicle.registrationState || null, assignedDriver: vehicle.assignedDriver || null, department: vehicle.department || null, notes: vehicle.notes || null,
+  status: status === 'Down' ? 'down' : status === 'Out of service' ? 'out_of_service' : status === 'Retired' ? 'retired' : 'active',
   trim: vehicle.trim || null,
   type: vehicle.type || null,
   assignment: vehicle.assignment || null,
 });
 
-const emptyDraft: VehicleDraft = { unit: '', vin: '', year: '', make: '', model: '', trim: '', type: '', mileage: '', assignment: '' };
+const emptyDraft: VehicleDraft = { unit: '', vin: '', year: '', make: '', model: '', trim: '', type: '', mileage: '', engineHours: '', engine: '', fuelType: '', licensePlate: '', registrationState: '', assignedDriver: '', department: '', notes: '', assignment: '' };
 const VIN_PATTERN = /^[A-HJ-NPR-Z0-9]{17}$/;
 
 const cleanVin = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 17);
@@ -149,8 +174,9 @@ const parseCsv = (text: string): string[][] => {
 
 const statusStyle: Record<VehicleStatus, string> = {
   Active: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  'In service': 'bg-amber-50 text-amber-700 ring-amber-600/20',
-  'Out of service': 'bg-rose-50 text-rose-700 ring-rose-600/20'
+  'Down': 'bg-amber-50 text-amber-700 ring-amber-600/20',
+  'Out of service': 'bg-rose-50 text-rose-700 ring-rose-600/20',
+  'Retired': 'bg-slate-100 text-slate-600 ring-slate-500/20'
 };
 
 export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdded, onVehiclesImported }) => {
@@ -214,7 +240,7 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
     if (!draft.unit || !VIN_PATTERN.test(draft.vin) || !draft.make || !draft.model) return;
     setImporting(true); setVehicleError('');
     try {
-      const response = await fleetFetch(selected ? `/api/vehicles/${selected.id}` : '/api/vehicles', { method: selected ? 'PUT' : 'POST', body: JSON.stringify(toStoredInput(draft)) });
+      const response = await fleetFetch(selected ? `/api/vehicles/${selected.id}` : '/api/vehicles', { method: selected ? 'PUT' : 'POST', body: JSON.stringify(toStoredInput(draft, selected?.status)) });
       const payload = await response.json() as { vehicle?: StoredVehicle; error?: string };
       if (!response.ok || !payload.vehicle) throw new Error(payload.error || 'Vehicle could not be saved.');
       const saved = fromStoredVehicle(payload.vehicle as StoredVehicle);
@@ -228,7 +254,7 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
   };
 
   const closeModal = () => { setModal(null); setSelected(null); setDraft(emptyDraft); setDecodeState('idle'); setDecodeMessage(''); setImportRows([]); setImporting(false); };
-  const openVehicle = (kind:'view'|'edit', vehicle:Vehicle) => { setSelected(vehicle); setDraft({unit:vehicle.unit,vin:vehicle.vin,year:vehicle.year,make:vehicle.make,model:vehicle.model,trim:vehicle.trim||'',type:vehicle.type,mileage:vehicle.mileage.replace(/,/g,''),assignment:vehicle.assignment}); setModal(kind); };
+  const openVehicle = (kind:'view'|'edit', vehicle:Vehicle) => { setSelected(vehicle); setDraft({unit:vehicle.unit,vin:vehicle.vin,year:vehicle.year,make:vehicle.make,model:vehicle.model,trim:vehicle.trim||'',type:vehicle.type,mileage:vehicle.mileage.replace(/,/g,''),engineHours:vehicle.engineHours,engine:vehicle.engine||'',fuelType:vehicle.fuelType||'',licensePlate:vehicle.licensePlate||'',registrationState:vehicle.registrationState||'',assignedDriver:vehicle.assignedDriver||'',department:vehicle.department||'',notes:vehicle.notes||'',assignment:vehicle.assignment}); setModal(kind); };
   const deleteVehicle = async (vehicle:Vehicle) => { if(!window.confirm(`Delete Unit ${vehicle.unit}?`)) return; setVehicleError(''); try { const response=await fleetFetch(`/api/vehicles/${vehicle.id}`,{method:'DELETE'}); const body=await response.json().catch(()=>({})) as {error?:string}; if(!response.ok) throw new Error(body.error||`Request failed (${response.status})`); setVehicles(current=>current.filter(item=>item.id!==vehicle.id)); } catch(error) { setVehicleError(error instanceof Error?error.message:'Vehicle could not be deleted.'); } };
 
   const loadCsv = async (file: File) => {
@@ -241,7 +267,7 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
       return {
         row: index + 2, unit: value(row, 'unit') || value(row, 'unitnumber'), vin,
         year: value(row, 'year'), make: value(row, 'make'), model: value(row, 'model'), trim: value(row, 'trim'),
-        type: value(row, 'type') || value(row, 'vehicletype'), mileage: value(row, 'mileage'), assignment: value(row, 'assignment'),
+        type: value(row, 'type') || value(row, 'vehicletype'), mileage: value(row, 'mileage'), engineHours: value(row, 'enginehours'), engine: value(row, 'engine'), fuelType: value(row, 'fueltype'), licensePlate: value(row, 'licenseplate'), registrationState: value(row, 'registrationstate'), assignedDriver: value(row, 'assigneddriver'), department: value(row, 'department'), notes: value(row, 'notes'), assignment: value(row, 'assignment'),
         status: VIN_PATTERN.test(vin) ? 'decoding' : 'error', message: VIN_PATTERN.test(vin) ? undefined : 'Invalid VIN'
       };
     });
@@ -274,7 +300,7 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
     setImporting(true); setVehicleError('');
     const drafts = ready.map(({ row: _row, status: _status, message: _message, ...vehicle }) => vehicle);
     try {
-      const response = await fleetFetch('/api/vehicles/import', { method: 'POST', body: JSON.stringify({ vehicles: drafts.map(toStoredInput) }) });
+      const response = await fleetFetch('/api/vehicles/import', { method: 'POST', body: JSON.stringify({ vehicles: drafts.map(draft => toStoredInput(draft)) }) });
       const payload = await response.json() as { vehicles?: StoredVehicle[]; error?: string };
       if (!response.ok) throw new Error(payload.error || 'Vehicles could not be imported.');
       setVehicles(current => [...(payload.vehicles || []).map(fromStoredVehicle), ...current]);
@@ -298,7 +324,7 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
         </div>
 
         <div className="mt-7 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {[['Total vehicles', vehicles.length, 'text-slate-950'], ['Available', vehicles.filter(v => v.status === 'Active').length, 'text-emerald-600'], ['In service', vehicles.filter(v => v.status === 'In service').length, 'text-amber-600'], ['Out of service', vehicles.filter(v => v.status === 'Out of service').length, 'text-rose-600']].map(([label, count, color]) => <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-medium text-slate-500">{label}</p><p className={`mt-2 text-2xl font-bold ${color}`}>{count}</p></div>)}
+          {[['Total vehicles', vehicles.length, 'text-slate-950'], ['Available', vehicles.filter(v => v.status === 'Active').length, 'text-emerald-600'], ['Down', vehicles.filter(v => v.status === 'Down').length, 'text-amber-600'], ['Out of service', vehicles.filter(v => v.status === 'Out of service').length, 'text-rose-600']].map(([label, count, color]) => <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-medium text-slate-500">{label}</p><p className={`mt-2 text-2xl font-bold ${color}`}>{count}</p></div>)}
         </div>
 
         {vehicleError && <div className="mt-5 flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"><AlertCircle className="h-5 w-5 shrink-0" /><span>{vehicleError}</span></div>}
@@ -329,7 +355,15 @@ export const VehicleWorkspace: React.FC<VehicleWorkspaceProps> = ({ onVehicleAdd
               <Field label="Trim" value={draft.trim} onChange={value => updateDraft('trim', value)} placeholder="XL" />
               <Field label="Vehicle type" value={draft.type} onChange={value => updateDraft('type', value)} placeholder="Pickup" />
               <Field label="Current mileage" value={draft.mileage} onChange={value => updateDraft('mileage', value)} placeholder="0" />
+              <Field label="Engine hours" value={draft.engineHours} onChange={value => updateDraft('engineHours', value)} placeholder="0" />
+              <Field label="Engine" value={draft.engine} onChange={value => updateDraft('engine', value)} placeholder="3.5L V6" />
+              <Field label="Fuel type" value={draft.fuelType} onChange={value => updateDraft('fuelType', value)} placeholder="Gas, diesel, EV" />
+              <Field label="License plate" value={draft.licensePlate} onChange={value => updateDraft('licensePlate', value)} placeholder="ABC-123" />
+              <Field label="Registration state" value={draft.registrationState} onChange={value => updateDraft('registrationState', value)} placeholder="TX" />
+              <Field label="Assigned driver" value={draft.assignedDriver} onChange={value => updateDraft('assignedDriver', value)} placeholder="Driver/operator" />
+              <Field label="Department" value={draft.department} onChange={value => updateDraft('department', value)} placeholder="North District" />
               <Field label="Assignment" value={draft.assignment} onChange={value => updateDraft('assignment', value)} placeholder="North District" />
+              <Field label="Notes" value={draft.notes} onChange={value => updateDraft('notes', value)} placeholder="Unit-specific instructions" />
             </div>
             <div className="mt-7 flex justify-end gap-2"><button onClick={closeModal} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancel</button><button onClick={saveVehicle} disabled={importing || !draft.unit || !VIN_PATTERN.test(draft.vin) || !draft.make || !draft.model} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">{importing && <Loader2 className="h-4 w-4 animate-spin" />}{selected?'Save changes':'Add vehicle'}</button></div>
           </div> : <div className="p-6">
