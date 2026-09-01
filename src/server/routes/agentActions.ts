@@ -5,6 +5,7 @@ import { createAgentActionProposal, verifyAgentActionProposal } from '../service
 import { googleFetch } from '../services/googleOAuth.js';
 import { createWorkOrder, deleteWorkOrder, updateWorkOrder } from '../services/operationsPersistence.js';
 import { operationsDataService } from '../services/operationsData.js';
+import { contactRepository } from '../services/contactStore.js';
 import { requireFleetOrganization, fleetAuthFailure } from '../services/fleetAuth.js';
 import { readGoogleTokens, writeGoogleTokens } from './google.js';
 
@@ -43,6 +44,14 @@ agentActionsRouter.post('/execute', async (req, res) => {
       const calendar = await googleFetch<any>('https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all', tokens, { method: 'POST', body: JSON.stringify(proposal.payload) });
       writeGoogleTokens(res, calendar.tokens);
       result = calendar.data;
+    } else if (proposal.kind === 'contact.create') {
+      result = await contactRepository().upsert(organizationId, proposal.payload);
+    } else if (proposal.kind === 'contact.update') {
+      const current = await contactRepository().getById(organizationId, String(proposal.payload.id));
+      if (!current) throw new Error('Contact not found');
+      result = await contactRepository().upsert(organizationId, { ...current, ...proposal.payload });
+    } else if (proposal.kind === 'contact.delete') {
+      result = { deleted: await contactRepository().delete(organizationId, String(proposal.payload.id)) };
     } else if (proposal.kind === 'customer.create') {
       result = await operationsDataService.createCustomer(organizationId, proposal.payload);
     } else if (proposal.kind === 'customer.update') {

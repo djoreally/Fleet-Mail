@@ -3,6 +3,9 @@ import crypto from 'node:crypto';
 export type AgentActionKind =
   | 'email.send'
   | 'calendar.create'
+  | 'contact.create'
+  | 'contact.update'
+  | 'contact.delete'
   | 'customer.create'
   | 'customer.update'
   | 'customer.delete'
@@ -73,6 +76,15 @@ export function normalizeAgentAction(kind: unknown, raw: unknown): { kind: Agent
       start: { dateTime: start }, end: { dateTime: end }, attendees: attendees.map((address) => ({ email: address })),
     };
     return { kind, payload, summary: `Create “${payload.summary}” on ${new Date(start).toLocaleString('en-US', { timeZone: 'UTC' })} UTC` };
+  }
+  if (kind === 'contact.create') {
+    const emailAddress = email(source.email);
+    const name = source.name ? requiredText(source.name, 'Contact name', 200) : emailAddress.split('@')[0];
+    return { kind, payload: { ...source, name, email: emailAddress }, summary: `Create contact “${name}”` };
+  }
+  if (kind === 'contact.update' || kind === 'contact.delete') {
+    const id = entityId(source.id, 'Contact');
+    return { kind, payload: { ...source, id }, summary: kind === 'contact.delete' ? `Delete contact ${id}` : `Update contact ${id}` };
   }
   if (kind === 'customer.create') {
     const name = requiredText(source.name, 'Customer name', 200);

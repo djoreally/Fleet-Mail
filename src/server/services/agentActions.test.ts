@@ -23,6 +23,7 @@ describe('agent action confirmation contract', () => {
   });
 
   it('normalizes confirmed customer and work-order actions', () => {
+    expect(normalizeAgentAction('contact.create', { email: 'ops@acme.test' })).toMatchObject({ kind: 'contact.create', payload: { name: 'ops', email: 'ops@acme.test' } });
     expect(normalizeAgentAction('customer.create', { name: 'Acme Fleet' })).toMatchObject({ kind: 'customer.create', payload: { name: 'Acme Fleet' } });
     expect(normalizeAgentAction('work-order.delete', { id: 'wo_1' })).toMatchObject({ kind: 'work-order.delete', payload: { id: 'wo_1' } });
   });
