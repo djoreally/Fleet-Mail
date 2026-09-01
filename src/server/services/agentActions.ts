@@ -1,9 +1,18 @@
 import crypto from 'node:crypto';
 
-export type AgentActionKind = 'email.send' | 'calendar.create';
+export type AgentActionKind =
+  | 'email.send'
+  | 'calendar.create'
+  | 'customer.create'
+  | 'customer.update'
+  | 'customer.delete'
+  | 'work-order.create'
+  | 'work-order.update'
+  | 'work-order.delete';
 
 export interface AgentActionProposal {
   id: string;
+  organizationId: string;
   kind: AgentActionKind;
   summary: string;
   payload: Record<string, unknown>;
@@ -24,6 +33,15 @@ function requiredText(value: unknown, name: string, max = 10_000) {
   return text;
 }
 
+function record(value: unknown, name = 'Action payload') {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${name} must be an object`);
+  return value as Record<string, unknown>;
+}
+
+function entityId(value: unknown, entity: string) {
+  return requiredText(value, `${entity} ID`, 200);
+}
+
 function email(value: unknown) {
   const text = requiredText(value, 'Recipient', 320);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) throw new Error('Recipient must be a valid email address');
@@ -38,13 +56,9 @@ function isoDate(value: unknown, name: string) {
 }
 
 export function normalizeAgentAction(kind: unknown, raw: unknown): { kind: AgentActionKind; payload: Record<string, unknown>; summary: string } {
-  const source = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const source = record(raw);
   if (kind === 'email.send') {
-    const payload = {
-      to: email(source.to),
-      subject: requiredText(source.subject, 'Subject', 998),
-      text: requiredText(source.text ?? source.body, 'Email body', 100_000),
-    };
+    const payload = { to: email(source.to), subject: requiredText(source.subject, 'Subject', 998), text: requiredText(source.text ?? source.body, 'Email body', 100_000) };
     return { kind, payload, summary: `Send “${payload.subject}” to ${payload.to}` };
   }
   if (kind === 'calendar.create') {
@@ -56,24 +70,34 @@ export function normalizeAgentAction(kind: unknown, raw: unknown): { kind: Agent
       summary: requiredText(source.summary ?? source.title, 'Event title', 1_000),
       description: source.description ? String(source.description).slice(0, 20_000) : undefined,
       location: source.location ? String(source.location).slice(0, 1_000) : undefined,
-      start: { dateTime: start },
-      end: { dateTime: end },
-      attendees: attendees.map((address) => ({ email: address })),
+      start: { dateTime: start }, end: { dateTime: end }, attendees: attendees.map((address) => ({ email: address })),
     };
     return { kind, payload, summary: `Create “${payload.summary}” on ${new Date(start).toLocaleString('en-US', { timeZone: 'UTC' })} UTC` };
+  }
+  if (kind === 'customer.create') {
+    const name = requiredText(source.name, 'Customer name', 200);
+    return { kind, payload: { ...source, name }, summary: `Create customer “${name}”` };
+  }
+  if (kind === 'customer.update' || kind === 'customer.delete') {
+    const id = entityId(source.id, 'Customer');
+    const name = source.name ? requiredText(source.name, 'Customer name', 200) : undefined;
+    return { kind, payload: { ...source, id, ...(name ? { name } : {}) }, summary: kind === 'customer.delete' ? `Delete customer ${id}` : `Update customer ${name ? `“${name}”` : id}` };
+  }
+  if (kind === 'work-order.create') {
+    const vehicleId = entityId(source.vehicleId, 'Vehicle');
+    return { kind, payload: { ...source, vehicleId }, summary: `Create work order for vehicle ${vehicleId}` };
+  }
+  if (kind === 'work-order.update' || kind === 'work-order.delete') {
+    const id = entityId(source.id, 'Work order');
+    return { kind, payload: { ...source, id }, summary: kind === 'work-order.delete' ? `Delete work order ${id}` : `Update work order ${id}` };
   }
   throw new Error('Unsupported agent action');
 }
 
-export function createAgentActionProposal(kind: unknown, payload: unknown) {
+export function createAgentActionProposal(kind: unknown, payload: unknown, organizationId: string) {
   const normalized = normalizeAgentAction(kind, payload);
   const now = Date.now();
-  const proposal: AgentActionProposal = {
-    id: crypto.randomUUID(),
-    ...normalized,
-    createdAt: new Date(now).toISOString(),
-    expiresAt: new Date(now + 10 * 60_000).toISOString(),
-  };
+  const proposal: AgentActionProposal = { id: crypto.randomUUID(), organizationId: requiredText(organizationId, 'Organization ID', 200), ...normalized, createdAt: new Date(now).toISOString(), expiresAt: new Date(now + 10 * 60_000).toISOString() };
   const encoded = Buffer.from(JSON.stringify(proposal)).toString('base64url');
   const signature = crypto.createHmac('sha256', signingKey()).update(encoded).digest('base64url');
   return { proposal, confirmationToken: `${encoded}.${signature}` };
@@ -87,11 +111,7 @@ export function verifyAgentActionProposal(token: unknown): AgentActionProposal {
   if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) throw new Error('The action proposal was changed');
   const proposal = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as AgentActionProposal;
   if (new Date(proposal.expiresAt).getTime() < Date.now()) throw new Error('The action proposal expired; review it again');
-  normalizeAgentAction(proposal.kind, proposal.kind === 'calendar.create' ? {
-    ...proposal.payload,
-    start: (proposal.payload.start as any)?.dateTime,
-    end: (proposal.payload.end as any)?.dateTime,
-    attendees: Array.isArray(proposal.payload.attendees) ? (proposal.payload.attendees as any[]).map((item) => item.email) : [],
-  } : proposal.payload);
+  if (!proposal.organizationId) throw new Error('The action proposal is missing an organization');
+  normalizeAgentAction(proposal.kind, proposal.kind === 'calendar.create' ? { ...proposal.payload, start: (proposal.payload.start as any)?.dateTime, end: (proposal.payload.end as any)?.dateTime, attendees: Array.isArray(proposal.payload.attendees) ? (proposal.payload.attendees as any[]).map((item) => item.email) : [] } : proposal.payload);
   return proposal;
 }

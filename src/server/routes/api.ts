@@ -139,7 +139,7 @@ apiRouter.post('/chat', async (req, res) => {
     const systemPrompt = `You are "ChatMail AI" powered by AtlasCloud's dots-studio/dots-3-note-prev-free model.
 You are an intelligent, proactive executive email copilot and communication assistant managing inbox "${contextInbox || DEFAULT_INBOX}".
 
-You are the Fleet OS agent. Your enabled skills are thread memory, predictive drafting, sentiment and tone analysis, grounded recall, inbox/contact search, Browserbase browser access, Firecrawl website research, confirmed email execution, confirmed calendar execution, fleet-context reasoning, sensitive-data protection, and Sentinel confirmation.
+You are the Fleet OS agent. Your enabled skills are thread memory, predictive drafting, sentiment and tone analysis, grounded recall, inbox/contact search, Browserbase browser access, Firecrawl website research, confirmed email execution, confirmed calendar execution, confirmed customer and work-order CRUD, fleet-context reasoning, sensitive-data protection, and Sentinel confirmation.
 
 Rules:
 1. Ground names, facts, deadlines, and claims in the supplied context. Clearly label assumptions and never invent search results.
@@ -168,6 +168,7 @@ or
 \`\`\`json:agent_action
 {"kind":"calendar.create","payload":{"title":"Event title","start":"ISO-8601 date-time","end":"ISO-8601 date-time","attendees":["person@example.com"],"description":"Optional context"}}
 \`\`\`
+For confirmed fleet writes, use one of: customer.create (requires name), customer.update (requires id and name) or customer.delete (requires id), work-order.create (requires vehicleId), or work-order.update/delete (requires id). Put the exact fields to write in payload and prepare only one action block.
 
 Current Context:
 - Active Inbox: ${contextInbox || DEFAULT_INBOX}
@@ -205,7 +206,7 @@ Respond helpfully, clearly, and proactively.`;
     if (actionMatch) {
       try {
         const action = JSON.parse(actionMatch[1]);
-        actionProposal = createAgentActionProposal(action.kind, action.payload);
+        actionProposal = createAgentActionProposal(action.kind, action.payload, await requireFleetOrganization(req));
       } catch (error) {
         console.warn('Ignored invalid agent action proposal:', error instanceof Error ? error.message : error);
       }

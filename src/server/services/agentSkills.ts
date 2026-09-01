@@ -22,6 +22,7 @@ export const AGENT_SKILLS: AgentSkill[] = [
   { id: 'website-crawl', name: 'Firecrawl Website Research', category: 'Information', description: 'Crawls a supplied public website and grounds answers in its readable page content.', status: process.env.FIRECRAWL_API_KEY ? 'connected' : 'guarded' },
   { id: 'browser-access', name: 'Browserbase Web Access', category: 'Information', description: 'Loads browser-rendered public pages and grounds the agent in their current readable content.', status: process.env.BROWSERBASE_API_KEY ? 'connected' : 'guarded' },
   { id: 'fleet-context', name: 'Fleet Operations Context', category: 'Information', description: 'Uses vehicles, work orders, maintenance, dispatch, and invoice context when supplied.', status: 'active' },
+  { id: 'fleet-crud', name: 'Confirmed Fleet Record CRUD', category: 'Execution', description: 'Creates, updates, and deletes customers and work orders only after a deliberate user confirmation.', status: 'connected', confirmationRequired: true },
   { id: 'pii-redaction', name: 'Sensitive Data Redaction', category: 'Trust & Safety', description: 'Redacts SSNs, payment-card patterns, and secrets before model processing.', status: 'active' },
   { id: 'sentinel', name: 'Sentinel Confirmation', category: 'Trust & Safety', description: 'Requires explicit confirmation for sends, replies, forwards, deletes, and calendar writes.', status: 'active', confirmationRequired: true },
 ];

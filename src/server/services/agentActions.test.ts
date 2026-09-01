@@ -8,17 +8,23 @@ describe('agent action confirmation contract', () => {
   afterEach(() => { process.env.AGENT_ACTION_SECRET = previous; });
 
   it('creates and verifies an exact email proposal', () => {
-    const created = createAgentActionProposal('email.send', { to: 'ops@example.com', subject: 'Unit 214', body: 'Ready for pickup.' });
+    const created = createAgentActionProposal('email.send', { to: 'ops@example.com', subject: 'Unit 214', body: 'Ready for pickup.' }, 'org_1');
     expect(verifyAgentActionProposal(created.confirmationToken)).toMatchObject({
       id: created.proposal.id,
       kind: 'email.send',
+      organizationId: 'org_1',
       payload: { to: 'ops@example.com', subject: 'Unit 214', text: 'Ready for pickup.' },
     });
   });
 
   it('rejects tampered confirmation tokens', () => {
-    const created = createAgentActionProposal('email.send', { to: 'ops@example.com', subject: 'Unit 214', body: 'Ready.' });
+    const created = createAgentActionProposal('email.send', { to: 'ops@example.com', subject: 'Unit 214', body: 'Ready.' }, 'org_1');
     expect(() => verifyAgentActionProposal(`${created.confirmationToken}changed`)).toThrow('changed');
+  });
+
+  it('normalizes confirmed customer and work-order actions', () => {
+    expect(normalizeAgentAction('customer.create', { name: 'Acme Fleet' })).toMatchObject({ kind: 'customer.create', payload: { name: 'Acme Fleet' } });
+    expect(normalizeAgentAction('work-order.delete', { id: 'wo_1' })).toMatchObject({ kind: 'work-order.delete', payload: { id: 'wo_1' } });
   });
 
   it('normalizes a calendar proposal to Google Calendar format', () => {

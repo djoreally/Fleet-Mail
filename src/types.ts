@@ -64,7 +64,7 @@ export interface ChatAttachment {
 export interface AgentActionProposal {
   proposal: {
     id: string;
-    kind: 'email.send' | 'calendar.create';
+    kind: 'email.send' | 'calendar.create' | 'customer.create' | 'customer.update' | 'customer.delete' | 'work-order.create' | 'work-order.update' | 'work-order.delete';
     summary: string;
     payload: Record<string, unknown>;
     createdAt: string;
