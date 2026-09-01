@@ -9,6 +9,7 @@ import { scheduleDispatchRouter } from './routes/scheduleDispatch.js';
 import { financialDocumentsRouter } from './routes/financialDocuments.js';
 import { vehicle360Router } from './routes/vehicle360.js';
 import { workOrderExecutionRouter } from './routes/workOrderExecution.js';
+import { prospectingRouter } from './routes/prospecting.js';
 
 export function createApp() {
   const app = express();
@@ -23,6 +24,7 @@ export function createApp() {
   app.use('/api/operations', operationsRouter);
   app.use('/api/operations', customerPartsRouter);
   app.use('/api/operations', workOrderExecutionRouter);
+  app.use('/api/operations', prospectingRouter);
   app.use('/api/fleet-operations', scheduleDispatchRouter);
   app.use('/api/fleet', financialDocumentsRouter);
 
