@@ -8,7 +8,10 @@ import { createAgentActionProposal } from '../services/agentActions.js';
 import { createVehicle, deleteVehicle, importVehicles, listVehicles, updateVehicle, VehicleStoreError } from '../services/vehicleStore.js';
 import { FleetAuthError, requireFleetOrganization } from '../services/fleetAuth.js';
 import type { StoredContact, StoredEmail } from '../types.js';
-import { createPostgresRepositories, NeonPoolExecutor } from '../repositories/index.js';
+import { randomUUID } from 'node:crypto';
+import { and, eq } from 'drizzle-orm';
+import { getDb } from '../../db/index.js';
+import { contacts as contactTable } from '../../db/drizzleSchema.js';
 
 export const apiRouter = Router();
 
@@ -666,9 +669,13 @@ apiRouter.post('/agentmail/simulate-incoming', async (req, res) => {
 // 7. Contacts API & Address Book Endpoints
 let storedContacts: StoredContact[] = [];
 const contactRepository = () => {
-  const connectionString = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
-  if (!connectionString) throw new Error('DATABASE_URL is required');
-  return createPostgresRepositories(NeonPoolExecutor.fromConnectionString(connectionString)).contacts;
+  const database=getDb(); if(!database) throw new Error('DATABASE_URL is required');
+  return {
+    list:(organizationId:string,_page?:unknown)=>database.select().from(contactTable).where(eq(contactTable.organizationId,organizationId)),
+    getById:async(organizationId:string,id:string)=>(await database.select().from(contactTable).where(and(eq(contactTable.organizationId,organizationId),eq(contactTable.id,id))).limit(1))[0]||null,
+    upsert:async(organizationId:string,value:any)=>{const fields={name:String(value.name||value.email),email:value.email?String(value.email).toLowerCase():null,phone:value.phone||null,role:value.role||null,notes:value.notes||null,tags:Array.isArray(value.tags)?value.tags:[],isPrimary:Boolean(value.isPrimary||value.isFavorite)};if(value.id){return (await database.update(contactTable).set({...fields,updatedAt:new Date()}).where(and(eq(contactTable.organizationId,organizationId),eq(contactTable.id,value.id))).returning())[0];}const existing=value.email?(await database.select().from(contactTable).where(and(eq(contactTable.organizationId,organizationId),eq(contactTable.email,String(value.email).toLowerCase()))).limit(1))[0]:null;if(existing)return (await database.update(contactTable).set({...fields,updatedAt:new Date()}).where(eq(contactTable.id,existing.id)).returning())[0];return (await database.insert(contactTable).values({id:randomUUID(),organizationId,...fields}).returning())[0];},
+    delete:async(organizationId:string,id:string)=>(await database.delete(contactTable).where(and(eq(contactTable.organizationId,organizationId),eq(contactTable.id,id))).returning()).length>0,
+  };
 };
 const presentContact = (contact:any):StoredContact => ({ id:contact.id,name:contact.name,email:contact.email,company:contact.company||undefined,role:contact.role||undefined,phone:contact.phone||undefined,notes:contact.notes||undefined,tags:contact.tags||[],isFavorite:Boolean(contact.isFavorite),source:contact.source||'manual',lastContacted:contact.updatedAt ? new Date(contact.updatedAt).toISOString() : undefined });
 
