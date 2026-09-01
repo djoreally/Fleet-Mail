@@ -15,6 +15,13 @@
       "when": 1788207600000,
       "tag": "0001_neon_data_api_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788234400000,
+      "tag": "0002_operational_chain",
+      "breakpoints": true
     }
   ]
 }
