@@ -1,14 +1,24 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchWithBrowserbase, fetchWithBrowserbaseDirect } from './browserbase.js';
 
-afterEach(() => {
-  vi.unstubAllGlobals();
+const originalBrowserbaseKey = process.env.BROWSERBASE_API_KEY;
+const originalFirecrawlKey = process.env.FIRECRAWL_API_KEY;
+
+beforeEach(() => {
   delete process.env.BROWSERBASE_API_KEY;
   delete process.env.FIRECRAWL_API_KEY;
 });
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+  if (originalBrowserbaseKey === undefined) delete process.env.BROWSERBASE_API_KEY;
+  else process.env.BROWSERBASE_API_KEY = originalBrowserbaseKey;
+  if (originalFirecrawlKey === undefined) delete process.env.FIRECRAWL_API_KEY;
+  else process.env.FIRECRAWL_API_KEY = originalFirecrawlKey;
+});
+
 describe('web research routing', () => {
-  it('requires a configured research or browser provider', async () => {
+  it('requires a configured research provider even when deployment secrets exist', async () => {
     await expect(fetchWithBrowserbase('https://example.com')).rejects.toThrow(/not configured/);
   });
 
