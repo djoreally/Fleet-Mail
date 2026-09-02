@@ -42,7 +42,7 @@ async function resolveOrganization(req: Request) {
   return resolveAgentRuntimeOrganization(String(req.body?.contextInbox || ''));
 }
 
-export async function fleetAgentRuntimeMiddleware(req: Request, _res: Response, next: NextFunction) {
+export async function fleetAgentRuntimeMiddleware(req: Request, res: Response, next: NextFunction) {
   if (req.method !== 'POST') return next();
 
   try {
@@ -80,6 +80,7 @@ export async function fleetAgentRuntimeMiddleware(req: Request, _res: Response, 
     ];
   } catch (error) {
     console.warn('Fleet agent runtime unavailable:', error instanceof Error ? error.message : error);
+    if (req.header('authorization')?.startsWith('Bearer ')) return res.status(401).json({ error: 'Valid Fleet organization access is required' });
   }
 
   return next();
