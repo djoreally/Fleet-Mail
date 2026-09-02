@@ -59,10 +59,10 @@ export class ScheduleDispatchService {
 
   private async appointmentWindow(token: string, org: string, appointmentId: unknown) {
     const id = cleanId(appointmentId, 'appointmentId');
-    const q = new URLSearchParams({ select: 'id,starts_at,ends_at', id: `eq.${id}`, organization_id: `eq.${org}`, limit: '1' });
+    const q = new URLSearchParams({ select: 'id,starts_at,ends_at,vehicle_id', id: `eq.${id}`, organization_id: `eq.${org}`, limit: '1' });
     const [row] = await this.request<JsonRecord[]>(token, `appointments?${q}`);
     if (!row) throw new FleetOperationsError('Appointment not found', 404);
-    return { id, startsAt: isoDate(row.starts_at, 'appointment startsAt'), endsAt: isoDate(row.ends_at, 'appointment endsAt') };
+    return { id, startsAt: isoDate(row.starts_at, 'appointment startsAt'), endsAt: isoDate(row.ends_at, 'appointment endsAt'), vehicleId: row.vehicle_id ? String(row.vehicle_id) : null };
   }
 
   private async assertDispatchSlot(token: string, org: string, technicianId: string, resourceId: string | null, startsAt: string, endsAt: string, excludeId?: string) {
@@ -117,7 +117,8 @@ export class ScheduleDispatchService {
     if (input.endsAt !== undefined) payload.ends_at = endsAt;
     if (input.status !== undefined) { const status = String(input.status); if (!allowedAppointmentStatuses.has(status)) throw new FleetOperationsError('Appointment status is invalid', 400); payload.status = status; }
     for (const [camel, snake] of [['workOrderId','work_order_id'],['customerId','customer_id'],['vehicleId','vehicle_id'],['locationId','location_id'],['notes','notes']] as const) if (input[camel] !== undefined) payload[snake] = input[camel] || null;
-    if (input.vehicleId) await this.assertAppointmentSlot(token, org, startsAt, endsAt, input.vehicleId, id);
+    const vehicleId = input.vehicleId !== undefined ? input.vehicleId : current.vehicleId;
+    if (vehicleId) await this.assertAppointmentSlot(token, org, startsAt, endsAt, vehicleId, id);
     return this.request<JsonRecord[]>(token, `appointments?id=eq.${id}&organization_id=eq.${org}`, { method: 'PATCH', body: JSON.stringify(payload) });
   }
 
@@ -125,6 +126,13 @@ export class ScheduleDispatchService {
     const org = this.org(organizationId); const id = cleanId(idValue, 'appointmentId');
     await this.request<unknown>(this.token(authorization), `appointments?id=eq.${id}&organization_id=eq.${org}`, { method: 'DELETE' });
     return { deleted: true, id };
+  }
+
+  private async dispatchState(token: string, org: string, dispatchId: string) {
+    const q = new URLSearchParams({ select: 'id,technician_id,resource_id,appointment_id,starts_at,status', id: `eq.${dispatchId}`, organization_id: `eq.${org}`, limit: '1' });
+    const [row] = await this.request<JsonRecord[]>(token, `dispatch_assignments?${q}`);
+    if (!row) throw new FleetOperationsError('Dispatch not found', 404);
+    return row;
   }
 
   async listDispatch(organizationId: unknown, authorization?: string) {
@@ -150,10 +158,14 @@ export class ScheduleDispatchService {
     if (input.status !== undefined) { const status = String(input.status); if (!allowedDispatchStatuses.has(status)) throw new FleetOperationsError('Dispatch status is invalid', 400); payload.status = status; if (status === 'arrived') payload.arrived_at = new Date().toISOString(); if (status === 'completed') payload.completed_at = new Date().toISOString(); }
     for (const [camel, snake] of [['technicianId','technician_id'],['resourceId','resource_id'],['appointmentId','appointment_id']] as const) if (input[camel] !== undefined) payload[snake] = input[camel] || null;
     if (input.startsAt !== undefined) payload.starts_at = input.startsAt ? isoDate(input.startsAt, 'startsAt') : null;
-    if (input.appointmentId && input.technicianId) {
-      const appointment = await this.appointmentWindow(token, org, input.appointmentId);
-      const start = input.startsAt ? isoDate(input.startsAt, 'startsAt') : appointment.startsAt;
-      await this.assertDispatchSlot(token, org, cleanId(input.technicianId, 'technicianId'), input.resourceId ? cleanId(input.resourceId, 'resourceId') : null, start, appointment.endsAt, id);
+    const current = await this.dispatchState(token, org, id);
+    const appointmentId = input.appointmentId !== undefined ? input.appointmentId : current.appointment_id;
+    const technicianId = input.technicianId !== undefined ? input.technicianId : current.technician_id;
+    const resourceId = input.resourceId !== undefined ? input.resourceId : current.resource_id;
+    if (appointmentId && technicianId) {
+      const appointment = await this.appointmentWindow(token, org, appointmentId);
+      const start = input.startsAt !== undefined && input.startsAt ? isoDate(input.startsAt, 'startsAt') : appointment.startsAt;
+      await this.assertDispatchSlot(token, org, cleanId(technicianId, 'technicianId'), resourceId ? cleanId(resourceId, 'resourceId') : null, start, appointment.endsAt, id);
     }
     return this.request<JsonRecord[]>(token, `dispatch_assignments?id=eq.${id}&organization_id=eq.${org}`, { method: 'PATCH', body: JSON.stringify(payload) });
   }
