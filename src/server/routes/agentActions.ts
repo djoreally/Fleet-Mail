@@ -7,6 +7,7 @@ import { readGoogleTokens, writeGoogleTokens } from './google.js';
 import { FleetAuthError, fleetAuthFailure, requireFleetOrganization } from '../services/fleetAuth.js';
 import { createWorkOrder } from '../services/operationsPersistence.js';
 import { workOrderExecutionService } from '../services/workOrderExecution.js';
+import { workOrderCompletionService } from '../services/workOrderCompletion.js';
 import { prospectingService } from '../services/prospecting.js';
 import { prospectOutreachService } from '../services/prospectOutreach.js';
 
@@ -59,12 +60,19 @@ agentActionsRouter.post('/execute', async (req, res) => {
       return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result });
     }
     if (proposal.kind === 'fleet.work_order.transition') {
-      const result = await workOrderExecutionService.transition(organizationId, String(proposal.payload.workOrderId), String(proposal.payload.status));
+      const status = String(proposal.payload.status);
+      const result = ['complete', 'completed'].includes(status)
+        ? await workOrderCompletionService.complete(organizationId, String(proposal.payload.workOrderId))
+        : await workOrderExecutionService.transition(organizationId, String(proposal.payload.workOrderId), status);
       return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result });
     }
     if (proposal.kind === 'fleet.authorization.decision') {
       const decision = String(proposal.payload.decision) as 'authorized' | 'rejected';
       const result = await workOrderExecutionService.decideAuthorization(organizationId, String(proposal.payload.authorizationId), decision, proposal.payload);
+      return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result });
+    }
+    if (proposal.kind === 'fleet.prospect.convert') {
+      const result = await prospectingService.convertToFleetAccount(organizationId, String(proposal.payload.prospectId));
       return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result });
     }
     throw new Error('Unsupported agent action');

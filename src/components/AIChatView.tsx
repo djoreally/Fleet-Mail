@@ -1,20 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import {
-  Bot,
-  ArrowUp,
-  Plus,
-  MoreVertical,
-  Calendar,
-  Send,
-  FileText,
-  Clock,
-  Sparkles,
-  Search,
-  Mic,
-  MicOff,
-  Image as ImageIcon,
-  XCircle
-} from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ArrowUp, Bot, Calendar, FileText, Image as ImageIcon, Mic, MicOff, MoreVertical, Send, XCircle } from 'lucide-react';
 import { ChatMessage, type ChatAttachment } from '../types';
 import { AgentSkillsPanel } from './AgentSkillsPanel';
 
@@ -27,13 +12,42 @@ interface AIChatViewProps {
   userAvatar?: string;
 }
 
+const MAX_FILES = 4;
+const MAX_BYTES = 3_000_000;
+const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const supported = new Set([
+  'image/png', 'image/jpeg', 'image/webp', 'image/gif',
+  'text/plain', 'text/csv', 'text/markdown', 'application/json',
+  'application/pdf', DOCX,
+]);
+
+function inferredType(file: File) {
+  if (file.type) return file.type;
+  if (/\.pdf$/i.test(file.name)) return 'application/pdf';
+  if (/\.docx$/i.test(file.name)) return DOCX;
+  if (/\.csv$/i.test(file.name)) return 'text/csv';
+  if (/\.json$/i.test(file.name)) return 'application/json';
+  if (/\.md$/i.test(file.name)) return 'text/markdown';
+  if (/\.txt$/i.test(file.name)) return 'text/plain';
+  return 'application/octet-stream';
+}
+
+function dataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Could not read attachment'));
+    reader.readAsDataURL(file);
+  });
+}
+
 export const AIChatView: React.FC<AIChatViewProps> = ({
   messages,
   onSendMessage,
   isLoading,
   onSendAndScheduleDraft,
   onConfirmAction,
-  userAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+  userAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
 }) => {
   const [inputText, setInputText] = useState('');
   const [showSkills, setShowSkills] = useState(false);
@@ -44,43 +58,44 @@ export const AIChatView: React.FC<AIChatViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isLoading]);
+  useEffect(() => () => recognitionRef.current?.stop?.(), []);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, isLoading]);
-
-  const handleSubmit = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if ((!inputText.trim() && !attachments.length) || isLoading) return;
+  const submit = (event?: React.FormEvent) => {
+    event?.preventDefault();
+    if (isLoading || (!inputText.trim() && !attachments.length)) return;
     onSendMessage(inputText.trim() || 'Please analyze the attached file.', attachments);
     setInputText('');
     setAttachments([]);
-  };
-
-  const handleChipClick = (chipText: string) => {
-    onSendMessage(chipText);
+    setAttachmentError('');
   };
 
   const addFiles = async (files: FileList | null) => {
     if (!files) return;
     setAttachmentError('');
-    const selected = Array.from(files).slice(0, Math.max(0, 4 - attachments.length));
-    const total = selected.reduce((sum, file) => sum + file.size, attachments.reduce((sum, file) => sum + file.size, 0));
-    if (total > 3_000_000) return setAttachmentError('Attachments must total 3 MB or less.');
-    const accepted = /^(image\/(png|jpeg|webp|gif)|text\/plain|text\/csv|application\/json|text\/markdown|application\/pdf|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document)$/;
-    if (selected.some(file => !accepted.test(file.type) && !/\.(md|txt|csv|json)$/i.test(file.name))) return setAttachmentError('Use PNG, JPG, WebP, GIF, PDF, DOCX, TXT, CSV, JSON, or Markdown files.');
-    const next = await Promise.all(selected.map(async file => {
-      const kind = file.type.startsWith('image/') ? 'image' as const : 'document' as const;
-      const item: ChatAttachment = { id: crypto.randomUUID(), name: file.name.slice(0, 180), type: file.type || 'text/plain', size: file.size, kind };
-      if (kind === 'image') item.dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file); });
-      else if (/^(text\/|application\/json)/.test(file.type) || /\.(md|txt|csv|json)$/i.test(file.name)) item.text = (await file.text()).slice(0, 20_000);
-      return item;
-    }));
-    setAttachments(current => [...current, ...next].slice(0, 4));
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    const room = Math.max(0, MAX_FILES - attachments.length);
+    const selected = Array.from(files).slice(0, room);
+    const totalBytes = attachments.reduce((sum, file) => sum + file.size, 0) + selected.reduce((sum, file) => sum + file.size, 0);
+    if (totalBytes > MAX_BYTES) return setAttachmentError('Attachments must total 3 MB or less.');
+
+    const invalid = selected.find((file) => !supported.has(inferredType(file)));
+    if (invalid) return setAttachmentError('Use PNG, JPG, WebP, GIF, PDF, DOCX, TXT, CSV, JSON, or Markdown files.');
+
+    try {
+      const next = await Promise.all(selected.map(async (file): Promise<ChatAttachment> => {
+        const type = inferredType(file);
+        const kind = type.startsWith('image/') ? 'image' as const : 'document' as const;
+        const item: ChatAttachment = { id: crypto.randomUUID(), name: file.name.slice(0, 180), type, size: file.size, kind };
+        if (kind === 'image' || type === 'application/pdf' || type === DOCX) item.dataUrl = await dataUrl(file);
+        else item.text = (await file.text()).slice(0, 50_000);
+        return item;
+      }));
+      setAttachments((current) => [...current, ...next].slice(0, MAX_FILES));
+    } catch (error) {
+      setAttachmentError(error instanceof Error ? error.message : 'Could not read attachment.');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const toggleDictation = () => {
@@ -95,11 +110,11 @@ export const AIChatView: React.FC<AIChatViewProps> = ({
     recognition.onresult = (event: any) => {
       let interim = '';
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const transcript = event.results[index][0].transcript;
-        if (event.results[index].isFinal) committed = `${committed}${committed ? ' ' : ''}${transcript.trim()}`;
-        else interim += transcript;
+        const transcript = String(event.results[index][0].transcript || '').trim();
+        if (event.results[index].isFinal) committed = `${committed}${committed ? ' ' : ''}${transcript}`;
+        else interim += `${transcript} `;
       }
-      setInputText(`${committed}${interim ? ` ${interim}` : ''}`);
+      setInputText(`${committed}${interim ? ` ${interim.trim()}` : ''}`);
     };
     recognition.onerror = (event: any) => setAttachmentError(event.error === 'not-allowed' ? 'Microphone permission was not granted.' : 'Voice input stopped unexpectedly.');
     recognition.onend = () => setIsListening(false);
@@ -109,236 +124,91 @@ export const AIChatView: React.FC<AIChatViewProps> = ({
   };
 
   return (
-    <div id="ai-chat-view-container" className="flex-1 bg-white flex flex-col h-full overflow-hidden">
-      {/* Header */}
-      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200 flex items-center justify-between bg-white shrink-0">
-        <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-          AI Assistant
-        </h2>
-        <button
-          title="More actions"
-          onClick={() => setShowSkills((value) => !value)}
-          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
-        >
-          <MoreVertical className="w-5 h-5" />
+    <div id="ai-chat-view-container" className="flex h-full flex-1 flex-col overflow-hidden bg-white">
+      <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 py-3 sm:px-6 sm:py-4">
+        <div>
+          <h2 className="text-xl font-bold tracking-tight text-slate-900">AI Assistant</h2>
+          <p className="text-xs text-slate-500">Fleet, inbox, documents and operations in one workspace</p>
+        </div>
+        <button type="button" title="Agent skills" onClick={() => setShowSkills((value) => !value)} className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900">
+          <MoreVertical className="h-5 w-5" />
         </button>
       </div>
 
-      {/* Messages Thread */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-5 md:space-y-6">
+      <div className="flex-1 space-y-5 overflow-y-auto p-4 sm:p-6 md:p-8">
         {showSkills && <AgentSkillsPanel />}
-        {/* Date Marker */}
-        <div className="flex items-center justify-center">
-          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-            Today
-          </span>
-        </div>
+        <div className="flex justify-center"><span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Today</span></div>
 
-        {/* Message bubbles */}
-        {messages.map((msg) => {
-          const isUser = msg.role === 'user';
-
-          if (isUser) {
-            return (
-              <div key={msg.id} className="flex items-start justify-end gap-3 max-w-2xl ml-auto">
-                <div className="bg-slate-900 text-white rounded-2xl rounded-tr-xs px-5 py-3.5 text-sm leading-relaxed shadow-sm font-normal">
-                  {msg.content}
-                  {!!msg.attachments?.length && <div className="mt-3 flex flex-wrap gap-2">{msg.attachments.map(file=><span key={file.id} className="inline-flex max-w-56 items-center gap-1 rounded-lg bg-white/10 px-2 py-1 text-xs"><span className="shrink-0">{file.kind==='image'?<ImageIcon className="h-3 w-3"/>:<FileText className="h-3 w-3"/>}</span><span className="truncate">{file.name}</span></span>)}</div>}
-                </div>
-                <img
-                  src={userAvatar}
-                  alt="User"
-                  className="w-8 h-8 rounded-full object-cover border border-slate-200 shrink-0 mt-1"
-                />
-              </div>
-            );
-          }
-
-          // Assistant Message
+        {messages.map((message) => {
+          const user = message.role === 'user';
           return (
-            <div key={msg.id} className="flex items-start gap-3 max-w-3xl">
-              {/* Blue robot square avatar */}
-              <div className="w-8 h-8 rounded-lg bg-[#0b57d0] text-white flex items-center justify-center shrink-0 shadow-xs mt-1">
-                <Bot className="w-5 h-5" />
-              </div>
-
-              <div className="space-y-3 flex-1">
-                {/* Content Box */}
-                <div className="bg-white border border-slate-200 rounded-2xl rounded-tl-xs p-5 shadow-xs space-y-4">
-                  <div className="text-sm text-slate-800 leading-relaxed font-normal whitespace-pre-wrap">
-                    {msg.content}
+            <div key={message.id} className={`flex max-w-3xl items-start gap-3 ${user ? 'ml-auto justify-end' : ''}`}>
+              {!user && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0b57d0] text-white"><Bot className="h-5 w-5" /></div>}
+              <div className={`rounded-2xl px-5 py-3.5 text-sm leading-relaxed shadow-sm ${user ? 'rounded-tr-sm bg-slate-900 text-white' : 'rounded-tl-sm border border-slate-200 bg-white text-slate-800'}`}>
+                <div className="whitespace-pre-wrap">{message.content}</div>
+                {!!message.attachments?.length && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {message.attachments.map((file) => <span key={file.id} className={`inline-flex max-w-56 items-center gap-1 rounded-lg px-2 py-1 text-xs ${user ? 'bg-white/10' : 'bg-slate-100'}`}>{file.kind === 'image' ? <ImageIcon className="h-3 w-3" /> : <FileText className="h-3 w-3" />}<span className="truncate">{file.name}</span></span>)}
                   </div>
+                )}
 
-                  {/* Optional Quick Action Chips */}
-                  {msg.chips && msg.chips.length > 0 && (
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      {msg.chips.map((chip, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => handleChipClick(chip)}
-                          className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-colors shadow-2xs cursor-pointer"
-                        >
-                          {chip}
+                {!user && message.emailDraft && (
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Draft to {message.emailDraft.to}</div>
+                    <div className="mt-2 whitespace-pre-wrap text-sm">{message.emailDraft.body}</div>
+                    <button type="button" onClick={() => onSendAndScheduleDraft(message.emailDraft!)} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[#0b57d0] px-3 py-2 text-xs font-semibold text-white"><Send className="h-3.5 w-3.5" />Use draft</button>
+                  </div>
+                )}
+
+                {!user && message.actionProposal && (
+                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-slate-900">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Review required</div>
+                    <div className="mt-1 font-semibold">{message.actionProposal.proposal.summary}</div>
+                    <div className="mt-1 text-xs text-slate-600">Nothing changes until you confirm.</div>
+                    {message.actionProposal.error && <div className="mt-2 text-xs font-medium text-red-700">{message.actionProposal.error}</div>}
+                    <div className="mt-3 flex justify-end">
+                      {message.actionProposal.state === 'executed' ? <span className="text-xs font-bold text-emerald-700">Executed</span> : (
+                        <button type="button" disabled={message.actionProposal.state === 'executing'} onClick={() => onConfirmAction(message.id, message.actionProposal!.confirmationToken)} className="rounded-lg bg-[#0b57d0] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">
+                          {message.actionProposal.state === 'executing' ? 'Executing…' : 'Confirm action'}
                         </button>
-                      ))}
+                      )}
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  {/* Structured Email Draft Card (if present) */}
-                  {msg.emailDraft && (
-                    <div className="bg-slate-50 border border-slate-200/90 rounded-xl p-4 space-y-2.5">
-                      <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        Draft to: {msg.emailDraft.to || 'Design Team'}
-                      </div>
-                      <p className="text-sm text-slate-800 italic leading-relaxed">
-                        &ldquo;{msg.emailDraft.body}&rdquo;
-                      </p>
-                    </div>
-                  )}
-
-                  {msg.actionProposal && (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4" aria-label="Action awaiting confirmation">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Review required</p>
-                          <p className="mt-1 text-sm font-semibold text-slate-900">{msg.actionProposal.proposal.summary}</p>
-                          <p className="mt-1 text-xs text-slate-600">The agent prepared this action but has not executed it.</p>
-                        </div>
-                        {msg.actionProposal.proposal.kind === 'calendar.create' ? <Calendar className="h-5 w-5 shrink-0 text-amber-700" /> : <Send className="h-5 w-5 shrink-0 text-amber-700" />}
-                      </div>
-                      {msg.actionProposal.error && <p className="mt-3 text-xs font-medium text-red-700">{msg.actionProposal.error}</p>}
-                      <div className="mt-4 flex items-center justify-between gap-3 border-t border-amber-200 pt-3">
-                        <span className="text-[11px] text-slate-500">Expires in 10 minutes</span>
-                        {msg.actionProposal.state === 'executed' ? (
-                          <span className="text-xs font-bold text-emerald-700">Executed</span>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={msg.actionProposal.state === 'executing'}
-                            onClick={() => onConfirmAction(msg.id, msg.actionProposal!.confirmationToken)}
-                            className="rounded-xl bg-[#0b57d0] px-4 py-2 text-xs font-semibold text-white hover:bg-[#0848b0] disabled:opacity-50"
-                          >
-                            {msg.actionProposal.state === 'executing' ? 'Executing…' : msg.actionProposal.proposal.kind === 'calendar.create' ? 'Confirm & create event' : 'Confirm & send email'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Calendar Sync & Schedule Button (if present) */}
-                  {msg.calendarInvite && (
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                      <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
-                        <Calendar className="w-4 h-4 text-slate-500" />
-                        <span>{msg.calendarInvite.title}: {msg.calendarInvite.time}</span>
-                      </div>
-
-                      <button
-                        onClick={() => {
-                          if (msg.emailDraft) {
-                            onSendAndScheduleDraft(msg.emailDraft);
-                          }
-                        }}
-                        className="px-4 py-2 rounded-xl bg-[#0b57d0] hover:bg-[#0848b0] text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-                      >
-                        Send email only
-                      </button>
-                    </div>
-                  )}
-                </div>
+                {!user && message.calendarInvite && <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3 text-xs text-slate-600"><Calendar className="h-4 w-4" />{message.calendarInvite.title}: {message.calendarInvite.time}</div>}
               </div>
+              {user && <img src={userAvatar} alt="User" className="mt-1 h-8 w-8 shrink-0 rounded-full border border-slate-200 object-cover" />}
             </div>
           );
         })}
 
-        {isLoading && (
-          <div className="flex items-start gap-3 max-w-md">
-            <div className="w-8 h-8 rounded-lg bg-[#0b57d0] text-white flex items-center justify-center shrink-0">
-              <Bot className="w-5 h-5 animate-pulse" />
-            </div>
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 text-xs text-slate-500 flex items-center gap-2 shadow-xs">
-              <span className="w-2 h-2 rounded-full bg-[#0b57d0] animate-ping"></span>
-              <span>Fleet OS is analyzing the request...</span>
-            </div>
-          </div>
-        )}
-
+        {isLoading && <div className="flex items-center gap-3 text-xs text-slate-500"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0b57d0] text-white"><Bot className="h-5 w-5 animate-pulse" /></div>Fleet OS is analyzing the request…</div>}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Bottom Input Area */}
-      <div className="p-4 md:p-6 border-t border-slate-200 bg-white shrink-0 space-y-3">
-        {/* Quick Suggestion Chips */}
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => handleChipClick('Draft a fleet service scheduling update for the customer')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
-          >
-            <FileText className="w-3.5 h-3.5 text-slate-500" />
-            <span>Draft Email</span>
-          </button>
-          <button
-            onClick={() => handleChipClick('Schedule a 30-minute sync with the design team for tomorrow at 10 AM')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
-          >
-            <Calendar className="w-3.5 h-3.5 text-slate-500" />
-            <span>Schedule Meeting</span>
-          </button>
-          <button
-            onClick={() => handleChipClick('Summarize all urgent unread emails in my inbox right now')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
-          >
-            <FileText className="w-3.5 h-3.5 text-slate-500" />
-            <span>Summarize Inbox</span>
-          </button>
-          <button
-            onClick={() => handleChipClick('Find latest document or email regarding Q3 OKRs and Strategy')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
-          >
-            <Search className="w-3.5 h-3.5 text-slate-500" />
-            <span>Find Document</span>
-          </button>
-        </div>
+      <div className="shrink-0 space-y-3 border-t border-slate-200 bg-white p-4 md:p-6">
+        {!!attachments.length && (
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {attachments.map((file) => (
+              <div key={file.id} className="relative flex min-w-36 max-w-56 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
+                {file.kind === 'image' && file.dataUrl ? <img src={file.dataUrl} alt="" className="h-9 w-9 rounded-md object-cover" /> : <FileText className="h-5 w-5 shrink-0 text-slate-500" />}
+                <div className="min-w-0"><div className="truncate text-xs font-medium text-slate-700">{file.name}</div><div className="text-[10px] text-slate-400">{Math.ceil(file.size / 1024)} KB</div></div>
+                <button type="button" aria-label={`Remove ${file.name}`} onClick={() => setAttachments((current) => current.filter((item) => item.id !== file.id))} className="absolute -right-1.5 -top-1.5 rounded-full bg-white text-slate-500 shadow"><XCircle className="h-4 w-4" /></button>
+              </div>
+            ))}
+          </div>
+        )}
+        {attachmentError && <p className="text-xs font-medium text-red-600">{attachmentError}</p>}
 
-        {!!attachments.length && <div className="flex gap-2 overflow-x-auto pb-1">{attachments.map(file=><div key={file.id} className="relative flex min-w-36 max-w-56 items-center gap-2 rounded-xl border bg-slate-50 p-2">{file.dataUrl?<img src={file.dataUrl} alt="" className="h-10 w-10 rounded-lg object-cover"/>:<FileText className="h-8 w-8 shrink-0 text-blue-600"/>}<span className="truncate text-xs font-medium">{file.name}</span><button type="button" aria-label={`Remove ${file.name}`} onClick={()=>setAttachments(items=>items.filter(item=>item.id!==file.id))} className="ml-auto text-slate-400 hover:text-red-600"><XCircle className="h-4 w-4"/></button></div>)}</div>}
-        {attachmentError&&<p role="alert" className="text-xs font-medium text-red-600">{attachmentError}</p>}
-        {/* Prompt Input Container */}
-        <form onSubmit={handleSubmit} className="relative flex items-center">
-          <input ref={fileInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,.docx,.txt,.csv,.json,.md" className="hidden" onChange={event=>void addFiles(event.target.files)}/>
-          <button
-            type="button"
-            title="Attach context or file"
-            onClick={()=>fileInputRef.current?.click()}
-            className="absolute left-3.5 p-1 rounded-lg text-slate-400 hover:text-slate-700 transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
-
-          <input
-            id="chat-user-input"
-            type="text"
-            placeholder="Ask AI to draft, summarize, or organize..."
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            className="w-full pl-12 pr-24 py-3.5 bg-white border border-slate-200 rounded-2xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#0b57d0] focus:ring-2 focus:ring-blue-100 transition-all shadow-xs"
-          />
-
-          <button type="button" onClick={toggleDictation} aria-label={isListening?'Stop voice input':'Start voice input'} className={`absolute right-12 rounded-lg p-2 transition-colors ${isListening?'animate-pulse bg-red-50 text-red-600':'text-slate-400 hover:text-blue-700'}`}>{isListening?<MicOff className="h-5 w-5"/>:<Mic className="h-5 w-5"/>}</button>
-
-          <button
-            id="chat-send-btn"
-            type="submit"
-            disabled={(!inputText.trim() && !attachments.length) || isLoading}
-            className="absolute right-2.5 w-9 h-9 rounded-xl bg-[#0b57d0] hover:bg-[#0848b0] disabled:opacity-40 text-white flex items-center justify-center shadow-xs transition-colors cursor-pointer"
-          >
-            <ArrowUp className="w-5 h-5" />
-          </button>
+        <form onSubmit={submit} className="flex items-end gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 shadow-sm focus-within:border-slate-300 focus-within:bg-white">
+          <input ref={fileInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/csv,text/markdown,application/json,.md,.txt,.csv,.json,.pdf,.docx" onChange={(event) => void addFiles(event.target.files)} className="hidden" />
+          <button type="button" aria-label="Attach files" onClick={() => fileInputRef.current?.click()} disabled={attachments.length >= MAX_FILES || isLoading} className="rounded-xl p-2 text-slate-500 hover:bg-slate-200 disabled:opacity-40"><FileText className="h-5 w-5" /></button>
+          <textarea value={inputText} onChange={(event) => setInputText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit(); } }} rows={1} placeholder="Ask Fleet OS anything…" className="max-h-36 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400" />
+          <button type="button" aria-label={isListening ? 'Stop voice input' : 'Start voice input'} onClick={toggleDictation} className={`rounded-xl p-2 ${isListening ? 'bg-red-50 text-red-600' : 'text-slate-500 hover:bg-slate-200'}`}>{isListening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}</button>
+          <button type="submit" aria-label="Send message" disabled={isLoading || (!inputText.trim() && !attachments.length)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0b57d0] text-white transition-colors hover:bg-[#0848b0] disabled:cursor-not-allowed disabled:opacity-40"><ArrowUp className="h-5 w-5" /></button>
         </form>
-
-        {/* Disclaimer */}
-        <p className="text-center text-[11px] text-slate-400">
-          AI can make mistakes. Verify important information.
-        </p>
+        <p className="text-center text-[10px] text-slate-400">Up to 4 files / 3 MB total. PDF and DOCX text is extracted server-side before AI analysis.</p>
       </div>
     </div>
   );

@@ -1,0 +1,50 @@
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+
+describe('dispatch and technician execution hardening', () => {
+  it('routes every scheduling mutation through the canonical conflict service', () => {
+    const route = readFileSync('src/server/routes/scheduleDispatch.ts', 'utf8');
+    expect(route).toContain('service.createAppointment');
+    expect(route).toContain('service.updateAppointment');
+    expect(route).toContain('service.createDispatch');
+    expect(route).toContain('service.updateDispatch');
+    expect(route).not.toContain('db().insert(appointments)');
+    expect(route).not.toContain('db().insert(dispatchAssignments)');
+  });
+
+  it('rechecks the persisted vehicle when only an appointment time changes', () => {
+    const source = readFileSync('src/server/services/scheduleDispatch.ts', 'utf8');
+    expect(source).toContain("select: 'id,starts_at,ends_at,vehicle_id'");
+    expect(source).toContain('input.vehicleId !== undefined ? input.vehicleId : current.vehicleId');
+    expect(source).toContain('assertAppointmentSlot(token, org, startsAt, endsAt, vehicleId, id)');
+  });
+
+  it('rechecks persisted technician and resource assignments on partial dispatch edits', () => {
+    const source = readFileSync('src/server/services/scheduleDispatch.ts', 'utf8');
+    expect(source).toContain('dispatchState(token, org, id)');
+    expect(source).toContain('input.technicianId !== undefined ? input.technicianId : current.technician_id');
+    expect(source).toContain('input.resourceId !== undefined ? input.resourceId : current.resource_id');
+    expect(source).toContain('assertDispatchSlot(token, org');
+  });
+
+  it('rejects related scheduling records outside the authenticated organization', () => {
+    const source = readFileSync('src/server/services/scheduleDispatch.ts', 'utf8');
+    expect(source).toContain('assertReference');
+    expect(source).toContain("organization_id: `eq.${org}`");
+    expect(source).toContain('was not found in this organization');
+    expect(source).toContain("'technicians'");
+    expect(source).toContain("'resources'");
+  });
+
+  it('never auto-closes a work order when an inspection is completed', () => {
+    const service = readFileSync('src/server/services/workOrderExecution.ts', 'utf8');
+    expect(service).toContain("this.transition(organizationId, inspection.workOrderId, 'review')");
+    expect(service).not.toContain("recommendations.length ? 'review' : 'complete'");
+  });
+
+  it('cannot let a confirmed AI action bypass validated work-order completion', () => {
+    const route = readFileSync('src/server/routes/agentActions.ts', 'utf8');
+    expect(route).toContain("['complete', 'completed'].includes(status)");
+    expect(route).toContain('workOrderCompletionService.complete');
+  });
+});

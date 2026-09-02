@@ -156,7 +156,7 @@ export class WorkOrderExecutionService {
     const recommendations = items.filter((item) => item.recommendation && !['good','ok','pass'].includes(item.condition.toLowerCase()));
     const workOrder = await this.workOrder(organizationId, inspection.workOrderId);
     if (workOrder.status === 'in_progress') {
-      await this.transition(organizationId, inspection.workOrderId, recommendations.length ? 'review' : 'complete');
+      await this.transition(organizationId, inspection.workOrderId, 'review');
     }
     return { inspection: updated, recommendationCount: recommendations.length };
   }
@@ -191,6 +191,10 @@ export class WorkOrderExecutionService {
       notes: optional(input.notes, 1000) ?? authorization.notes,
       authorizedAt: new Date(),
     }).where(and(eq(authorizations.organizationId, organizationId), eq(authorizations.id, authorizationId))).returning();
+    if (decision === 'authorized') {
+      await db.update(serviceLines).set({ authorized: true })
+        .where(and(eq(serviceLines.organizationId, organizationId), eq(serviceLines.workOrderId, authorization.workOrderId)));
+    }
     const workOrder = await this.workOrder(organizationId, authorization.workOrderId);
     if (workOrder.status === 'authorization_pending') await this.transition(organizationId, authorization.workOrderId, decision === 'authorized' ? 'authorized' : 'review');
     return updated;
@@ -199,6 +203,9 @@ export class WorkOrderExecutionService {
   async addServiceLine(organizationId: string, workOrderId: string, input: Record<string, unknown>) {
     const row = await this.workOrder(organizationId, workOrderId);
     if (['complete','completed','cancelled'].includes(row.status)) throw new Error('Closed work orders cannot be changed');
+    const approvalRows = await database().select().from(authorizations)
+      .where(and(eq(authorizations.organizationId, organizationId), eq(authorizations.workOrderId, workOrderId)));
+    const hasPersistedApproval = approvalRows.some((approval) => approval.status === 'authorized');
     const [created] = await database().insert(serviceLines).values({
       id: randomUUID(), organizationId, workOrderId,
       description: text(input.description, 'Service description', 500),
@@ -206,7 +213,7 @@ export class WorkOrderExecutionService {
       laborMinutes: Math.round(nonNegative(input.laborMinutes, 'Labor minutes', 0)),
       quantity: nonNegative(input.quantity, 'Quantity', 1).toFixed(3),
       unitPrice: nonNegative(input.unitPrice, 'Unit price', 0).toFixed(2),
-      authorized: input.authorized === true,
+      authorized: input.authorized === true && hasPersistedApproval,
       maintenanceScheduleId: optional(input.maintenanceScheduleId, 100),
     }).returning();
     return created;

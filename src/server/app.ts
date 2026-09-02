@@ -7,11 +7,16 @@ import { operationsRouter } from './routes/operations.js';
 import { customerPartsRouter } from './routes/customerParts.js';
 import { scheduleDispatchRouter } from './routes/scheduleDispatch.js';
 import { financialDocumentsRouter } from './routes/financialDocuments.js';
+import { financialReadModelRouter } from './routes/financialReadModel.js';
+import { paymentReconciliationRouter } from './routes/paymentReconciliation.js';
 import { vehicle360Router } from './routes/vehicle360.js';
 import { workOrderExecutionRouter } from './routes/workOrderExecution.js';
+import { workOrderCompletionRouter } from './routes/workOrderCompletion.js';
+import { maintenanceIntelligenceRouter } from './routes/maintenanceIntelligence.js';
 import { prospectingRouter } from './routes/prospecting.js';
 import { prospectWebhookService, verifyAgentMailWebhook } from './services/prospectWebhook.js';
 import { fleetAgentRuntimeMiddleware } from './services/fleetAgentRuntime.js';
+import { chatAttachmentExtractionMiddleware } from './services/chatAttachmentExtraction.js';
 
 export function createApp() {
   const app = express();
@@ -35,6 +40,7 @@ export function createApp() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
+  app.use('/api/chat', chatAttachmentExtractionMiddleware);
   app.use('/api/chat', fleetAgentRuntimeMiddleware);
 
   app.use('/api', apiRouter);
@@ -44,9 +50,13 @@ export function createApp() {
   app.use('/api/agent/actions', agentActionsRouter);
   app.use('/api/operations', operationsRouter);
   app.use('/api/operations', customerPartsRouter);
+  app.use('/api/operations', maintenanceIntelligenceRouter);
+  app.use('/api/operations', workOrderCompletionRouter);
   app.use('/api/operations', workOrderExecutionRouter);
   app.use('/api/operations', prospectingRouter);
   app.use('/api/fleet-operations', scheduleDispatchRouter);
+  app.use('/api/fleet', paymentReconciliationRouter);
+  app.use('/api/fleet', financialReadModelRouter);
   app.use('/api/fleet', financialDocumentsRouter);
 
   return app;
