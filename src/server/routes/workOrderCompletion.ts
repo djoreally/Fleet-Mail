@@ -4,7 +4,7 @@ import { workOrderCompletionService } from '../services/workOrderCompletion.js';
 
 export const workOrderCompletionRouter = Router();
 
-workOrderCompletionRouter.post('/work-orders/:id/complete-validated', async (req, res) => {
+const complete = async (req: any, res: any) => {
   try {
     const organizationId = await requireFleetOrganization(req);
     return res.json({ workOrder: await workOrderCompletionService.complete(organizationId, req.params.id) });
@@ -14,4 +14,12 @@ workOrderCompletionRouter.post('/work-orders/:id/complete-validated', async (req
     const status = /not found/i.test(message) ? 404 : /required|must|cannot|pending|unresolved|completed|cancelled|completable/i.test(message) ? 400 : 500;
     return res.status(status).json({ error: message });
   }
+};
+
+workOrderCompletionRouter.post('/work-orders/:id/transition', async (req, res, next) => {
+  const status = String(req.body?.status || '');
+  if (status !== 'complete' && status !== 'completed') return next();
+  return complete(req, res);
 });
+
+workOrderCompletionRouter.post('/work-orders/:id/complete-validated', complete);
