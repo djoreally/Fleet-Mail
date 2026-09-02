@@ -53,7 +53,13 @@ function optionalNumber(value: unknown, name: string) {
 export function normalizeAgentAction(kind: unknown, raw: unknown): { kind: AgentActionKind; payload: Record<string, unknown>; summary: string } {
   const source = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   if (kind === 'email.send') {
-    const payload = { to: email(source.to), subject: requiredText(source.subject, 'Subject', 998), text: requiredText(source.text ?? source.body, 'Email body', 100_000) };
+    const payload = {
+      to: email(source.to),
+      subject: requiredText(source.subject, 'Subject', 998),
+      text: requiredText(source.text ?? source.body, 'Email body', 100_000),
+      prospectId: optionalText(source.prospectId, 100),
+      contactId: optionalText(source.contactId, 100),
+    };
     return { kind, payload, summary: `Send “${payload.subject}” to ${payload.to}` };
   }
   if (kind === 'calendar.create') {
