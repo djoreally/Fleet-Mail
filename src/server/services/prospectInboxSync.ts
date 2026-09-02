@@ -48,7 +48,7 @@ export class ProspectInboxSyncService{
       externalMessageId:externalMessageId||null,occurredAt:message?.created_at||message?.createdAt?new Date(message.created_at||message.createdAt):new Date(),metadata:{from,contactId:match.contactId||null,inboxId:serverConfig.defaultInbox},
     });
     const nextStage=['new','researching','qualified','outreach'].includes(prospect.stage)?'engaged':prospect.stage;
-    await db.update(prospects).set({stage:nextStage,updatedAt:new Date()}).where(and(eq(prospects.organizationId,organizationId),eq(prospects.id,match.prospectId)));
+    await db.update(prospects).set({stage:nextStage,nextFollowUpAt:new Date(),updatedAt:new Date()}).where(and(eq(prospects.organizationId,organizationId),eq(prospects.id,match.prospectId)));
     recorded++;
   }
   return {scanned:messages.length,matched,recorded,duplicates,ignored};

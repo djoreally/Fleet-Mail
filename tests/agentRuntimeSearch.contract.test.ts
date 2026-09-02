@@ -8,9 +8,10 @@ describe('agent runtime Fleet search contract',()=>{
   });
   it('grounds chat with organization-scoped runtime results before the latest user request',()=>{
     const app=readFileSync('src/server/app.ts','utf8');
+    const runtime=readFileSync('src/server/services/fleetAgentRuntime.ts','utf8');
     expect(app).toContain("app.use('/api/chat'");
-    expect(app).toContain('resolveAgentRuntimeOrganization');
-    expect(app).toContain('searchAgentRuntimeContext');
-    expect(app).toContain('Trusted Fleet OS runtime lookup');
+    expect(runtime).toContain('resolveAgentRuntimeOrganization');
+    expect(runtime).toContain('searchAgentRuntimeContext');
+    expect(runtime).toContain('Trusted Fleet OS tool results');
   });
 });

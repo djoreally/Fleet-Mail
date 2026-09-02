@@ -40,4 +40,11 @@ describe('agent action confirmation contract', () => {
       attendees: [{ email: 'fleet@example.com' }],
     });
   });
+
+  it('signs a prospect conversion proposal without executing it', () => {
+    const created = createAgentActionProposal('fleet.prospect.convert', { prospectId: 'prospect-42' });
+    expect(verifyAgentActionProposal(created.confirmationToken)).toMatchObject({
+      kind: 'fleet.prospect.convert', payload: { prospectId: 'prospect-42' },
+    });
+  });
 });
