@@ -131,6 +131,9 @@ export class ScheduleDispatchService {
     if (input.endsAt !== undefined) payload.ends_at = endsAt;
     if (input.status !== undefined) { const status = String(input.status); if (!allowedAppointmentStatuses.has(status)) throw new FleetOperationsError('Appointment status is invalid', 400); payload.status = status; }
     for (const [camel, snake] of [['workOrderId','work_order_id'],['customerId','customer_id'],['vehicleId','vehicle_id'],['locationId','location_id'],['notes','notes']] as const) if (input[camel] !== undefined) payload[snake] = input[camel] || null;
+    if (input.customerId !== undefined) await this.assertReference(token, org, 'customers', input.customerId, 'customerId');
+    if (input.workOrderId !== undefined) await this.assertReference(token, org, 'work_orders', input.workOrderId, 'workOrderId');
+    if (input.vehicleId !== undefined) await this.assertReference(token, org, 'vehicles', input.vehicleId, 'vehicleId');
     const vehicleId = input.vehicleId !== undefined ? input.vehicleId : current.vehicleId;
     if (vehicleId) await this.assertAppointmentSlot(token, org, startsAt, endsAt, vehicleId, id);
     return this.request<JsonRecord[]>(token, `appointments?id=eq.${id}&organization_id=eq.${org}`, { method: 'PATCH', body: JSON.stringify(payload) });
