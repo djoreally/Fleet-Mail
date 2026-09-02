@@ -10,6 +10,7 @@ import { financialDocumentsRouter } from './routes/financialDocuments.js';
 import { vehicle360Router } from './routes/vehicle360.js';
 import { workOrderExecutionRouter } from './routes/workOrderExecution.js';
 import { workOrderCompletionRouter } from './routes/workOrderCompletion.js';
+import { maintenanceIntelligenceRouter } from './routes/maintenanceIntelligence.js';
 import { prospectingRouter } from './routes/prospecting.js';
 import { prospectWebhookService, verifyAgentMailWebhook } from './services/prospectWebhook.js';
 import { fleetAgentRuntimeMiddleware } from './services/fleetAgentRuntime.js';
@@ -45,6 +46,7 @@ export function createApp() {
   app.use('/api/agent/actions', agentActionsRouter);
   app.use('/api/operations', operationsRouter);
   app.use('/api/operations', customerPartsRouter);
+  app.use('/api/operations', maintenanceIntelligenceRouter);
   app.use('/api/operations', workOrderCompletionRouter);
   app.use('/api/operations', workOrderExecutionRouter);
   app.use('/api/operations', prospectingRouter);
