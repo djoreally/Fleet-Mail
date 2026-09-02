@@ -48,6 +48,15 @@ export class ScheduleDispatchService {
   private org(value: unknown) { return cleanId(value, 'organizationId'); }
   private token(authorization?: string) { return authorization?.replace(/^Bearer\s+/i, '') || ''; }
 
+  private async assertReference(token: string, org: string, table: 'customers' | 'vehicles' | 'work_orders' | 'technicians' | 'resources', value: unknown, label: string) {
+    if (value === undefined || value === null || value === '') return null;
+    const id = cleanId(value, label);
+    const q = new URLSearchParams({ select: 'id', id: `eq.${id}`, organization_id: `eq.${org}`, limit: '1' });
+    const rows = await this.request<JsonRecord[]>(token, `${table}?${q}`);
+    if (!rows.length) throw new FleetOperationsError(`${label} was not found in this organization`, 404);
+    return id;
+  }
+
   private async assertAppointmentSlot(token: string, org: string, startsAt: string, endsAt: string, vehicleId?: unknown, excludeId?: string) {
     if (!vehicleId) return;
     const vehicle = cleanId(vehicleId, 'vehicleId');
@@ -59,10 +68,10 @@ export class ScheduleDispatchService {
 
   private async appointmentWindow(token: string, org: string, appointmentId: unknown) {
     const id = cleanId(appointmentId, 'appointmentId');
-    const q = new URLSearchParams({ select: 'id,starts_at,ends_at', id: `eq.${id}`, organization_id: `eq.${org}`, limit: '1' });
+    const q = new URLSearchParams({ select: 'id,starts_at,ends_at,vehicle_id', id: `eq.${id}`, organization_id: `eq.${org}`, limit: '1' });
     const [row] = await this.request<JsonRecord[]>(token, `appointments?${q}`);
     if (!row) throw new FleetOperationsError('Appointment not found', 404);
-    return { id, startsAt: isoDate(row.starts_at, 'appointment startsAt'), endsAt: isoDate(row.ends_at, 'appointment endsAt') };
+    return { id, startsAt: isoDate(row.starts_at, 'appointment startsAt'), endsAt: isoDate(row.ends_at, 'appointment endsAt'), vehicleId: row.vehicle_id ? String(row.vehicle_id) : null };
   }
 
   private async assertDispatchSlot(token: string, org: string, technicianId: string, resourceId: string | null, startsAt: string, endsAt: string, excludeId?: string) {
@@ -102,8 +111,13 @@ export class ScheduleDispatchService {
     if (endsAt <= startsAt) throw new FleetOperationsError('endsAt must be after startsAt', 400);
     const status = String(input.status || 'scheduled');
     if (!allowedAppointmentStatuses.has(status)) throw new FleetOperationsError('Appointment status is invalid', 400);
-    await this.assertAppointmentSlot(token, org, startsAt, endsAt, input.vehicleId);
-    const payload = { id: randomUUID(), organization_id: org, work_order_id: input.workOrderId || null, customer_id: input.customerId || null, vehicle_id: input.vehicleId || null, location_id: input.locationId || null, starts_at: startsAt, ends_at: endsAt, status, notes: input.notes || null };
+    const [customerId, vehicleId, workOrderId] = await Promise.all([
+      this.assertReference(token, org, 'customers', input.customerId, 'customerId'),
+      this.assertReference(token, org, 'vehicles', input.vehicleId, 'vehicleId'),
+      this.assertReference(token, org, 'work_orders', input.workOrderId, 'workOrderId'),
+    ]);
+    await this.assertAppointmentSlot(token, org, startsAt, endsAt, vehicleId);
+    const payload = { id: randomUUID(), organization_id: org, work_order_id: workOrderId, customer_id: customerId, vehicle_id: vehicleId, location_id: input.locationId || null, starts_at: startsAt, ends_at: endsAt, status, notes: input.notes || null };
     return this.request<JsonRecord[]>(token, 'appointments', { method: 'POST', body: JSON.stringify(payload) });
   }
 
@@ -117,7 +131,11 @@ export class ScheduleDispatchService {
     if (input.endsAt !== undefined) payload.ends_at = endsAt;
     if (input.status !== undefined) { const status = String(input.status); if (!allowedAppointmentStatuses.has(status)) throw new FleetOperationsError('Appointment status is invalid', 400); payload.status = status; }
     for (const [camel, snake] of [['workOrderId','work_order_id'],['customerId','customer_id'],['vehicleId','vehicle_id'],['locationId','location_id'],['notes','notes']] as const) if (input[camel] !== undefined) payload[snake] = input[camel] || null;
-    if (input.vehicleId) await this.assertAppointmentSlot(token, org, startsAt, endsAt, input.vehicleId, id);
+    if (input.customerId !== undefined) await this.assertReference(token, org, 'customers', input.customerId, 'customerId');
+    if (input.workOrderId !== undefined) await this.assertReference(token, org, 'work_orders', input.workOrderId, 'workOrderId');
+    if (input.vehicleId !== undefined) await this.assertReference(token, org, 'vehicles', input.vehicleId, 'vehicleId');
+    const vehicleId = input.vehicleId !== undefined ? input.vehicleId : current.vehicleId;
+    if (vehicleId) await this.assertAppointmentSlot(token, org, startsAt, endsAt, vehicleId, id);
     return this.request<JsonRecord[]>(token, `appointments?id=eq.${id}&organization_id=eq.${org}`, { method: 'PATCH', body: JSON.stringify(payload) });
   }
 
@@ -125,6 +143,13 @@ export class ScheduleDispatchService {
     const org = this.org(organizationId); const id = cleanId(idValue, 'appointmentId');
     await this.request<unknown>(this.token(authorization), `appointments?id=eq.${id}&organization_id=eq.${org}`, { method: 'DELETE' });
     return { deleted: true, id };
+  }
+
+  private async dispatchState(token: string, org: string, dispatchId: string) {
+    const q = new URLSearchParams({ select: 'id,technician_id,resource_id,appointment_id,starts_at,status', id: `eq.${dispatchId}`, organization_id: `eq.${org}`, limit: '1' });
+    const [row] = await this.request<JsonRecord[]>(token, `dispatch_assignments?${q}`);
+    if (!row) throw new FleetOperationsError('Dispatch not found', 404);
+    return row;
   }
 
   async listDispatch(organizationId: unknown, authorization?: string) {
@@ -136,12 +161,16 @@ export class ScheduleDispatchService {
   async createDispatch(organizationId: unknown, authorization: string | undefined, input: JsonRecord) {
     const org = this.org(organizationId); const token = this.token(authorization); const status = String(input.status || 'assigned');
     if (!allowedDispatchStatuses.has(status)) throw new FleetOperationsError('Dispatch status is invalid', 400);
-    const technicianId = cleanId(input.technicianId, 'technicianId');
-    const resourceId = input.resourceId ? cleanId(input.resourceId, 'resourceId') : null;
+    const [workOrderId, technicianId, resourceId] = await Promise.all([
+      this.assertReference(token, org, 'work_orders', input.workOrderId, 'workOrderId'),
+      this.assertReference(token, org, 'technicians', input.technicianId, 'technicianId'),
+      this.assertReference(token, org, 'resources', input.resourceId, 'resourceId'),
+    ]);
+    if (!workOrderId || !technicianId) throw new FleetOperationsError('Work order and technician are required', 400);
     const appointment = input.appointmentId ? await this.appointmentWindow(token, org, input.appointmentId) : null;
     const startsAt = input.startsAt ? isoDate(input.startsAt, 'startsAt') : appointment?.startsAt || null;
     if (startsAt && appointment) await this.assertDispatchSlot(token, org, technicianId, resourceId, startsAt, appointment.endsAt);
-    const payload = { id: randomUUID(), organization_id: org, work_order_id: cleanId(input.workOrderId, 'workOrderId'), appointment_id: input.appointmentId || null, technician_id: technicianId, resource_id: resourceId, status, starts_at: startsAt };
+    const payload = { id: randomUUID(), organization_id: org, work_order_id: workOrderId, appointment_id: input.appointmentId || null, technician_id: technicianId, resource_id: resourceId, status, starts_at: startsAt };
     return this.request<JsonRecord[]>(token, 'dispatch_assignments', { method: 'POST', body: JSON.stringify(payload) });
   }
 
@@ -150,10 +179,16 @@ export class ScheduleDispatchService {
     if (input.status !== undefined) { const status = String(input.status); if (!allowedDispatchStatuses.has(status)) throw new FleetOperationsError('Dispatch status is invalid', 400); payload.status = status; if (status === 'arrived') payload.arrived_at = new Date().toISOString(); if (status === 'completed') payload.completed_at = new Date().toISOString(); }
     for (const [camel, snake] of [['technicianId','technician_id'],['resourceId','resource_id'],['appointmentId','appointment_id']] as const) if (input[camel] !== undefined) payload[snake] = input[camel] || null;
     if (input.startsAt !== undefined) payload.starts_at = input.startsAt ? isoDate(input.startsAt, 'startsAt') : null;
-    if (input.appointmentId && input.technicianId) {
-      const appointment = await this.appointmentWindow(token, org, input.appointmentId);
-      const start = input.startsAt ? isoDate(input.startsAt, 'startsAt') : appointment.startsAt;
-      await this.assertDispatchSlot(token, org, cleanId(input.technicianId, 'technicianId'), input.resourceId ? cleanId(input.resourceId, 'resourceId') : null, start, appointment.endsAt, id);
+    const current = await this.dispatchState(token, org, id);
+    const appointmentId = input.appointmentId !== undefined ? input.appointmentId : current.appointment_id;
+    const technicianId = input.technicianId !== undefined ? input.technicianId : current.technician_id;
+    const resourceId = input.resourceId !== undefined ? input.resourceId : current.resource_id;
+    if (input.technicianId !== undefined) await this.assertReference(token, org, 'technicians', input.technicianId, 'technicianId');
+    if (input.resourceId !== undefined) await this.assertReference(token, org, 'resources', input.resourceId, 'resourceId');
+    if (appointmentId && technicianId) {
+      const appointment = await this.appointmentWindow(token, org, appointmentId);
+      const start = input.startsAt !== undefined && input.startsAt ? isoDate(input.startsAt, 'startsAt') : appointment.startsAt;
+      await this.assertDispatchSlot(token, org, cleanId(technicianId, 'technicianId'), resourceId ? cleanId(resourceId, 'resourceId') : null, start, appointment.endsAt, id);
     }
     return this.request<JsonRecord[]>(token, `dispatch_assignments?id=eq.${id}&organization_id=eq.${org}`, { method: 'PATCH', body: JSON.stringify(payload) });
   }
