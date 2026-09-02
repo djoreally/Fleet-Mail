@@ -15,6 +15,12 @@ function matchesTerms(value:unknown,terms:string[]){const hay=String(value??'').
 function messageText(message:any){return [message?.from,message?.to,message?.cc,message?.subject,message?.text,message?.body,message?.preview,message?.snippet].flat(Infinity).filter(Boolean).join(' ');}
 function mailAddress(value:unknown){if(Array.isArray(value))return value.map(mailAddress).filter(Boolean).join(', ');if(value&&typeof value==='object'){const v=value as Record<string,unknown>;return String(v.email||v.address||v.value||v.name||'');}return String(value??'');}
 
+export async function resolveAgentRuntimeOrganization(activeInbox:string){
+ const db=getDb();if(!db)return null;const inbox=String(activeInbox||'').trim().toLowerCase();if(!inbox)return null;
+ const [row]=await db.select({organizationId:inboxes.organizationId}).from(inboxes).where(and(eq(inboxes.isActive,true),or(eq(inboxes.email,inbox),eq(inboxes.externalInboxId,inbox)))).limit(1);
+ return row?.organizationId||null;
+}
+
 export async function searchAgentRuntimeContext(organizationId:string,userText:string){
  const db=getDb();if(!db)return {query:userText,terms:[],fleet:{},emails:[]};
  const terms=termsFrom(userText);if(!terms.length)return {query:userText,terms,fleet:{},emails:[]};
@@ -29,7 +35,6 @@ export async function searchAgentRuntimeContext(organizationId:string,userText:s
   db.select({id:maintenanceSchedules.id,vehicleId:maintenanceSchedules.vehicleId,serviceCode:maintenanceSchedules.serviceCode,program:maintenanceSchedules.program,nextDueAt:maintenanceSchedules.nextDueAt,nextDueMileage:maintenanceSchedules.nextDueMileage,nextDueEngineHours:maintenanceSchedules.nextDueEngineHours,active:maintenanceSchedules.active}).from(maintenanceSchedules).where(and(eq(maintenanceSchedules.organizationId,organizationId),or(like(maintenanceSchedules.serviceCode),like(maintenanceSchedules.program)))).limit(10),
   db.select({prospectId:prospectActivities.prospectId,kind:prospectActivities.kind,direction:prospectActivities.direction,channel:prospectActivities.channel,subject:prospectActivities.subject,summary:prospectActivities.summary,occurredAt:prospectActivities.occurredAt}).from(prospectActivities).where(and(eq(prospectActivities.organizationId,organizationId),or(like(prospectActivities.subject),like(prospectActivities.summary)))).orderBy(desc(prospectActivities.occurredAt)).limit(12),
  ]);
-
  let emails:any[]=[];
  try{
   const client=getAgentMailClient() as any;
@@ -37,10 +42,7 @@ export async function searchAgentRuntimeContext(organizationId:string,userText:s
    const orgInboxes=await db.select({externalInboxId:inboxes.externalInboxId,email:inboxes.email}).from(inboxes).where(and(eq(inboxes.organizationId,organizationId),eq(inboxes.isActive,true))).limit(3);
    const inboxIds=(orgInboxes.length?orgInboxes.map(row=>row.externalInboxId||row.email):[serverConfig.defaultInbox]).filter(Boolean) as string[];
    const collected:any[]=[];
-   for(const inboxId of inboxIds){
-    const result=await client.inboxes.messages.list(inboxId,{limit:100});
-    for(const message of Array.isArray(result?.messages)?result.messages:[]){if(matchesTerms(messageText(message),terms))collected.push({inboxId,id:message.message_id||message.messageId||message.id,from:mailAddress(message.from),to:mailAddress(message.to),subject:String(message.subject||''),preview:String(message.text||message.preview||message.snippet||'').slice(0,1200),createdAt:message.created_at||message.createdAt||null});}
-   }
+   for(const inboxId of inboxIds){const result=await client.inboxes.messages.list(inboxId,{limit:100});for(const message of Array.isArray(result?.messages)?result.messages:[]){if(matchesTerms(messageText(message),terms))collected.push({inboxId,id:message.message_id||message.messageId||message.id,from:mailAddress(message.from),to:mailAddress(message.to),subject:String(message.subject||''),preview:String(message.text||message.preview||message.snippet||'').slice(0,1200),createdAt:message.created_at||message.createdAt||null});}}
    emails=collected.sort((a,b)=>new Date(b.createdAt||0).getTime()-new Date(a.createdAt||0).getTime()).slice(0,15);
   }
  }catch(error){console.warn('Agent runtime email search unavailable:',error instanceof Error?error.message:error);}
