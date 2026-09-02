@@ -1,20 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import { planAgentTools } from '../src/server/services/agentToolRouter.js';
+import { AGENT_READ_TOOL_CATALOG, planAgentTools } from '../src/server/services/agentToolRouter.js';
 
 describe('Fleet agent tool router', () => {
-  it('routes contact and email questions to relationship sources', () => {
-    const plan = planAgentTools('Find Zachary at Reynolds and show me our emails with him');
-    expect(plan.readTools).toContain('contacts.search');
-    expect(plan.readTools).toContain('prospects.search');
-    expect(plan.readTools).toContain('fleetAccounts.search');
-    expect(plan.readTools).toContain('email.search');
+  it('publishes the complete deterministic Fleet OS read catalog', () => {
+    expect(AGENT_READ_TOOL_CATALOG).toEqual(expect.arrayContaining([
+      'fleetAccounts.search', 'vehicles.search', 'contacts.search', 'locations.search',
+      'maintenance.search', 'workOrders.search', 'schedule.search', 'dispatch.search',
+      'inspections.search', 'authorizations.search', 'financials.search',
+      'invoices.search', 'payments.search', 'prospects.search',
+      'prospectActivity.search', 'email.search', 'documents.search',
+    ]));
   });
 
-  it('routes maintenance questions to vehicle, PM, and work order sources', () => {
-    const plan = planAgentTools('What maintenance is due for Unit 218?');
-    expect(plan.readTools).toContain('vehicles.search');
-    expect(plan.readTools).toContain('maintenance.search');
-    expect(plan.readTools).toContain('workOrders.search');
+  it('routes contact and email questions to relationship sources', () => {
+    const plan = planAgentTools('Find Zachary at Reynolds and show me our emails with him');
+    expect(plan.readTools).toEqual(expect.arrayContaining(['contacts.search', 'prospects.search', 'fleetAccounts.search', 'email.search']));
+  });
+
+  it('routes a work order through its operational dependencies', () => {
+    const plan = planAgentTools('Show work order WO-218 inspection, authorization, dispatch and invoice status');
+    expect(plan.readTools).toEqual(expect.arrayContaining([
+      'workOrders.search', 'schedule.search', 'dispatch.search',
+      'inspections.search', 'authorizations.search', 'invoices.search',
+    ]));
+  });
+
+  it('routes finance, payment, and document requests', () => {
+    expect(planAgentTools('Show unpaid invoices and payment aging').readTools).toEqual(expect.arrayContaining(['invoices.search', 'payments.search', 'financials.search']));
+    expect(planAgentTools('Find the inspection PDF attachment for Unit 21').readTools).toEqual(expect.arrayContaining(['documents.search', 'inspections.search', 'vehicles.search']));
   });
 
   it('uses research mode for web research and browser mode only for explicit interaction', () => {
