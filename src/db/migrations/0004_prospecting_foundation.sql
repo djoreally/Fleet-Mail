@@ -91,5 +91,16 @@ BEGIN
   END LOOP;
 END $rls$;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.prospects, public.prospect_contacts, public.prospect_activities TO authenticated;
-REVOKE ALL ON public.prospects, public.prospect_contacts, public.prospect_activities FROM anon;
+-- Neon projects do not necessarily expose Supabase-style `authenticated` and
+-- `anon` database roles. Apply those grants only when the role is present so
+-- the migration remains portable and can be safely replayed after a partial run.
+DO $roles$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.prospects, public.prospect_contacts, public.prospect_activities TO authenticated;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    REVOKE ALL ON public.prospects, public.prospect_contacts, public.prospect_activities FROM anon;
+  END IF;
+END $roles$;
