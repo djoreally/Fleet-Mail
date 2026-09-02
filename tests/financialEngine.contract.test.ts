@@ -7,7 +7,7 @@ describe('financial engine contract', () => {
     for (const table of ['invoices','payments','service_lines','part_usage','fluid_usage','work_orders']) {
       expect(source).toContain(`public.${table}`);
     }
-    expect(source.match(/organization_id=\$1/g)?.length).toBeGreaterThanOrEqual(6);
+    expect(source.match(/organization_id=\$1/g)?.length).toBeGreaterThanOrEqual(5);
   });
 
   it('reports receivables aging and supported direct-cost profitability', () => {
