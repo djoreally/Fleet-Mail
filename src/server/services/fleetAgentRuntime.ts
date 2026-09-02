@@ -2,6 +2,8 @@ import type { NextFunction, Request, Response } from 'express';
 import { requireFleetOrganization } from './fleetAuth.js';
 import { resolveAgentRuntimeOrganization, searchAgentRuntimeContext } from './agentRuntimeSearch.js';
 import { planAgentTools } from './agentToolRouter.js';
+import { maintenanceIntelligenceService } from './maintenanceIntelligence.js';
+import { financialReadModelService } from './financialReadModel.js';
 
 const FLEET_ACTION_POLICY = `Fleet OS agent tool policy.
 
@@ -62,12 +64,19 @@ export async function fleetAgentRuntimeMiddleware(req: Request, _res: Response, 
     if (!organizationId) return next();
 
     const runtime = await searchAgentRuntimeContext(organizationId, latestUserText);
+    const [maintenance, financials] = await Promise.all([
+      toolPlan.readTools.includes('maintenance.search') ? maintenanceIntelligenceService.attention(organizationId) : Promise.resolve(null),
+      toolPlan.readTools.some((tool) => ['invoices.search','payments.search','financials.summary'].includes(tool))
+        ? financialReadModelService.dashboard(organizationId)
+        : Promise.resolve(null),
+    ]);
+    const trustedRuntime = { ...runtime, maintenanceIntelligence: maintenance, financials };
     const hasFleetMatches = Object.values(runtime.fleet || {}).some((value) => Array.isArray(value) && value.length > 0);
-    const hasRuntimeMatches = hasFleetMatches || runtime.emails.length > 0;
+    const hasRuntimeMatches = hasFleetMatches || runtime.emails.length > 0 || Boolean(maintenance) || Boolean(financials);
     const selectedTools = toolPlan.readTools.join(', ');
 
     const runtimeContext = hasRuntimeMatches
-      ? `\n\nTrusted Fleet OS tool results for the latest request. The deterministic router selected: ${selectedTools}. These results are live and organization-scoped. Use matching records before saying data is unavailable. If multiple records match, explain the ambiguity.\n${JSON.stringify(runtime)}`
+      ? `\n\nTrusted Fleet OS tool results for the latest request. The deterministic router selected: ${selectedTools}. These results are live and organization-scoped. Use matching records before saying data is unavailable. If multiple records match, explain the ambiguity.\n${JSON.stringify(trustedRuntime)}`
       : `\n\nThe deterministic Fleet tool router selected: ${selectedTools}. No matching live Fleet or AgentMail records were found for the latest request. Do not invent a record or identifier.`;
 
     const contextMessage = {
