@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { requireFleetOrganization } from './fleetAuth.js';
 import { resolveAgentRuntimeOrganization, searchAgentRuntimeContext } from './agentRuntimeSearch.js';
+import { planAgentTools } from './agentToolRouter.js';
 
 const FLEET_ACTION_POLICY = `Fleet OS agent tool policy.
 
@@ -52,16 +53,22 @@ export async function fleetAgentRuntimeMiddleware(req: Request, _res: Response, 
     if (latestUserIndex < 0) return next();
 
     const latestUserText = String(messages[latestUserIndex]?.content || '');
+    const toolPlan = planAgentTools(latestUserText);
+    req.body.agentToolPlan = toolPlan;
+
+    if (!toolPlan.readTools.length) return next();
+
     const organizationId = await resolveOrganization(req);
     if (!organizationId) return next();
 
     const runtime = await searchAgentRuntimeContext(organizationId, latestUserText);
     const hasFleetMatches = Object.values(runtime.fleet || {}).some((value) => Array.isArray(value) && value.length > 0);
     const hasRuntimeMatches = hasFleetMatches || runtime.emails.length > 0;
+    const selectedTools = toolPlan.readTools.join(', ');
 
     const runtimeContext = hasRuntimeMatches
-      ? `\n\nTrusted Fleet OS runtime results for the latest request. These results are live and organization-scoped. Use matching records before saying data is unavailable. If multiple records match, explain the ambiguity.\n${JSON.stringify(runtime)}`
-      : '\n\nNo matching live Fleet or AgentMail records were found for the latest request. Do not invent a record or identifier.';
+      ? `\n\nTrusted Fleet OS tool results for the latest request. The deterministic router selected: ${selectedTools}. These results are live and organization-scoped. Use matching records before saying data is unavailable. If multiple records match, explain the ambiguity.\n${JSON.stringify(runtime)}`
+      : `\n\nThe deterministic Fleet tool router selected: ${selectedTools}. No matching live Fleet or AgentMail records were found for the latest request. Do not invent a record or identifier.`;
 
     const contextMessage = {
       role: 'system',
