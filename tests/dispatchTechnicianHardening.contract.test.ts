@@ -27,6 +27,15 @@ describe('dispatch and technician execution hardening', () => {
     expect(source).toContain('assertDispatchSlot(token, org');
   });
 
+  it('rejects related scheduling records outside the authenticated organization', () => {
+    const source = readFileSync('src/server/services/scheduleDispatch.ts', 'utf8');
+    expect(source).toContain('assertReference');
+    expect(source).toContain("organization_id: `eq.${org}`");
+    expect(source).toContain('was not found in this organization');
+    expect(source).toContain("'technicians'");
+    expect(source).toContain("'resources'");
+  });
+
   it('never auto-closes a work order when an inspection is completed', () => {
     const service = readFileSync('src/server/services/workOrderExecution.ts', 'utf8');
     expect(service).toContain("this.transition(organizationId, inspection.workOrderId, 'review')");
