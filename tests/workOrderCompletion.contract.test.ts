@@ -15,4 +15,11 @@ describe('validated technician work-order completion', () => {
     expect(source).toContain('eq(inspections.organizationId, organizationId)');
     expect(source).toContain('workOrderExecutionService.transition');
   });
+
+  it('intercepts legacy complete transitions before the execution router', () => {
+    const route = readFileSync('src/server/routes/workOrderCompletion.ts', 'utf8');
+    const app = readFileSync('src/server/app.ts', 'utf8');
+    expect(route).toContain("status !== 'complete'");
+    expect(app.indexOf('workOrderCompletionRouter')).toBeLessThan(app.lastIndexOf('workOrderExecutionRouter'));
+  });
 });
