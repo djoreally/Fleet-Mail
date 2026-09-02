@@ -28,12 +28,19 @@ describe('ScheduleDispatchService', () => {
     })).rejects.toBeInstanceOf(FleetOperationsError);
   });
 
-  it('writes organization-scoped dispatch records with an allowed status', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('[]', { status: 201 }));
+  it('writes organization-scoped dispatch records with validated references and an allowed status', async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const target = String(url);
+      if (target.includes('/work_orders?')) return new Response('[{"id":"wo_1"}]', { status: 200 });
+      if (target.includes('/technicians?')) return new Response('[{"id":"tech_1"}]', { status: 200 });
+      if (target.endsWith('/dispatch_assignments') && init?.method === 'POST') return new Response('[{"id":"dispatch_1"}]', { status: 201 });
+      return new Response('[]', { status: 200 });
+    });
     vi.stubGlobal('fetch', fetchMock);
     const service = new ScheduleDispatchService('https://db.test');
     await service.createDispatch('org_1', 'Bearer token', { workOrderId: 'wo_1', technicianId: 'tech_1', status: 'assigned' });
-    const [, init] = fetchMock.mock.calls[0];
-    expect(JSON.parse(init.body)).toMatchObject({ organization_id: 'org_1', work_order_id: 'wo_1', technician_id: 'tech_1', status: 'assigned' });
+    const postCall = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
+    expect(postCall).toBeTruthy();
+    expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({ organization_id: 'org_1', work_order_id: 'wo_1', technician_id: 'tech_1', status: 'assigned' });
   });
 });
