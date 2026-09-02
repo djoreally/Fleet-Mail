@@ -12,6 +12,7 @@ export type AgentReadTool =
   | 'inspections.search'
   | 'authorizations.search'
   | 'financials.search'
+  | 'financials.summary'
   | 'invoices.search'
   | 'payments.search'
   | 'email.search'
@@ -29,7 +30,7 @@ export const AGENT_READ_TOOL_CATALOG: readonly AgentReadTool[] = [
   'prospects.search', 'prospectActivity.search', 'contacts.search', 'locations.search',
   'fleetAccounts.search', 'vehicles.search', 'maintenance.search', 'workOrders.search',
   'schedule.search', 'dispatch.search', 'inspections.search', 'authorizations.search',
-  'financials.search', 'invoices.search', 'payments.search', 'email.search', 'documents.search',
+  'financials.search', 'financials.summary', 'invoices.search', 'payments.search', 'email.search', 'documents.search',
 ] as const;
 
 const includesAny = (text: string, terms: string[]) => terms.some((term) => text.includes(term));
@@ -51,8 +52,8 @@ export function planAgentTools(userText: string): AgentToolPlan {
   const dispatchIntent = includesAny(text, ['dispatch', 'technician', 'assigned', 'en route', 'arrived', 'resource']);
   const inspectionIntent = includesAny(text, ['inspection', 'inspect', 'condition', 'measurement', 'tread', 'brake pad', 'recommendation']);
   const authorizationIntent = includesAny(text, ['authorization', 'authorize', 'approval', 'approve', 'reject', 'decline', 'po required']);
-  const financialIntent = includesAny(text, ['financial', 'revenue', 'profit', 'cost', 'labor', 'parts', 'fluid', 'estimate', 'aging']);
-  const invoiceIntent = includesAny(text, ['invoice', 'balance due', 'receivable', 'billing', 'due date']);
+  const financialIntent = includesAny(text, ['financial', 'revenue', 'profit', 'margin', 'cost', 'labor', 'parts', 'fluid', 'estimate', 'aging']);
+  const invoiceIntent = includesAny(text, ['invoice', 'balance', 'balance due', 'receivable', 'billing', 'due date', 'past due']);
   const paymentIntent = includesAny(text, ['payment', 'paid', 'unpaid', 'refund', 'stripe', 'transaction']);
   const emailIntent = includesAny(text, ['email', 'inbox', 'message', 'thread', 'reply', 'replied', 'conversation', 'sent', 'wrote', 'said']);
   const documentIntent = includesAny(text, ['document', 'attachment', 'pdf', 'docx', 'file ', 'photo', 'image']);
@@ -68,9 +69,9 @@ export function planAgentTools(userText: string): AgentToolPlan {
   if (dispatchIntent) add('dispatch.search', 'schedule.search', 'workOrders.search');
   if (inspectionIntent) add('inspections.search', 'authorizations.search', 'workOrders.search', 'vehicles.search', 'documents.search');
   if (authorizationIntent) add('authorizations.search', 'inspections.search', 'workOrders.search', 'financials.search');
-  if (financialIntent) add('financials.search', 'invoices.search', 'payments.search', 'workOrders.search', 'fleetAccounts.search');
-  if (invoiceIntent) add('invoices.search', 'payments.search', 'financials.search', 'fleetAccounts.search', 'workOrders.search');
-  if (paymentIntent) add('payments.search', 'invoices.search', 'financials.search', 'fleetAccounts.search');
+  if (financialIntent) add('financials.search', 'financials.summary', 'invoices.search', 'payments.search', 'workOrders.search', 'fleetAccounts.search');
+  if (invoiceIntent) add('invoices.search', 'payments.search', 'financials.search', 'financials.summary', 'fleetAccounts.search', 'workOrders.search');
+  if (paymentIntent) add('payments.search', 'invoices.search', 'financials.search', 'financials.summary', 'fleetAccounts.search');
   if (emailIntent) add('email.search', 'contacts.search', 'prospects.search', 'fleetAccounts.search');
   if (documentIntent) add('documents.search', 'fleetAccounts.search', 'vehicles.search', 'workOrders.search');
 
