@@ -16,6 +16,15 @@ describe('agent action confirmation contract', () => {
     });
   });
 
+  it('preserves prospect linkage inside the signed email proposal', () => {
+    const created = createAgentActionProposal('email.send', {
+      to: 'fleet@example.com', subject: 'Onsite fleet maintenance', body: 'Would Tuesday work?', prospectId: 'prospect-1', contactId: 'contact-1',
+    });
+    expect(verifyAgentActionProposal(created.confirmationToken).payload).toMatchObject({
+      to: 'fleet@example.com', prospectId: 'prospect-1', contactId: 'contact-1',
+    });
+  });
+
   it('rejects tampered confirmation tokens', () => {
     const created = createAgentActionProposal('email.send', { to: 'ops@example.com', subject: 'Unit 214', body: 'Ready.' });
     expect(() => verifyAgentActionProposal(`${created.confirmationToken}changed`)).toThrow('changed');
