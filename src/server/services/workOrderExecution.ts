@@ -156,7 +156,9 @@ export class WorkOrderExecutionService {
     const recommendations = items.filter((item) => item.recommendation && !['good','ok','pass'].includes(item.condition.toLowerCase()));
     const workOrder = await this.workOrder(organizationId, inspection.workOrderId);
     if (workOrder.status === 'in_progress') {
-      await this.transition(organizationId, inspection.workOrderId, recommendations.length ? 'review' : 'complete');
+      // Inspection completion never closes the work order by itself. The explicit
+      // completion endpoint applies authorization and service-line gates.
+      await this.transition(organizationId, inspection.workOrderId, 'review');
     }
     return { inspection: updated, recommendationCount: recommendations.length };
   }
