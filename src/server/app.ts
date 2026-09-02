@@ -45,8 +45,8 @@ export function createApp() {
   app.use('/api/agent/actions', agentActionsRouter);
   app.use('/api/operations', operationsRouter);
   app.use('/api/operations', customerPartsRouter);
-  app.use('/api/operations', workOrderExecutionRouter);
   app.use('/api/operations', workOrderCompletionRouter);
+  app.use('/api/operations', workOrderExecutionRouter);
   app.use('/api/operations', prospectingRouter);
   app.use('/api/fleet-operations', scheduleDispatchRouter);
   app.use('/api/fleet', financialDocumentsRouter);
