@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
 import { contacts, customers, emailThreads, inspectionItems, inspections, invoices, locations, maintenanceSchedules, vehicles, workOrders } from '../../db/drizzleSchema.js';
+import { prospectActivities, prospectContacts, prospects } from '../../db/prospectSchema.js';
 
 function database() {
   const db = getDb();
@@ -26,7 +27,7 @@ export class FleetAccount360Service {
       .where(and(eq(customers.organizationId, organizationId), eq(customers.id, customerId))).limit(1);
     if (!account) throw new Error('Fleet account not found');
 
-    const [contactRows, locationRows, vehicleRows, workOrderRows, invoiceRows, threadRows] = await Promise.all([
+    const [contactRows, locationRows, vehicleRows, workOrderRows, invoiceRows, threadRows, sourceProspectRows] = await Promise.all([
       db.select().from(contacts)
         .where(and(eq(contacts.organizationId, organizationId), eq(contacts.customerId, customerId)))
         .orderBy(desc(contacts.isPrimary), contacts.name),
@@ -46,11 +47,15 @@ export class FleetAccount360Service {
         .from(emailThreads)
         .where(and(eq(emailThreads.organizationId, organizationId), eq(emailThreads.customerId, customerId)))
         .orderBy(desc(emailThreads.lastMessageAt)).limit(100),
+      db.select().from(prospects)
+        .where(and(eq(prospects.organizationId, organizationId), eq(prospects.convertedCustomerId, customerId)))
+        .orderBy(desc(prospects.convertedAt)).limit(20),
     ]);
 
     const vehicleIds = vehicleRows.map((row) => row.id);
     const workOrderIds = workOrderRows.map((row) => row.id);
-    const [scheduleRows, inspectionRows] = await Promise.all([
+    const sourceProspectIds = sourceProspectRows.map((row) => row.id);
+    const [scheduleRows, inspectionRows, sourceProspectContactRows, sourceProspectActivityRows] = await Promise.all([
       vehicleIds.length
         ? db.select().from(maintenanceSchedules)
             .where(and(eq(maintenanceSchedules.organizationId, organizationId), inArray(maintenanceSchedules.vehicleId, vehicleIds)))
@@ -60,6 +65,16 @@ export class FleetAccount360Service {
         ? db.select().from(inspections)
             .where(and(eq(inspections.organizationId, organizationId), inArray(inspections.workOrderId, workOrderIds)))
             .orderBy(desc(inspections.createdAt))
+        : Promise.resolve([]),
+      sourceProspectIds.length
+        ? db.select().from(prospectContacts)
+            .where(and(eq(prospectContacts.organizationId, organizationId), inArray(prospectContacts.prospectId, sourceProspectIds)))
+            .orderBy(desc(prospectContacts.isDecisionMaker), prospectContacts.name)
+        : Promise.resolve([]),
+      sourceProspectIds.length
+        ? db.select().from(prospectActivities)
+            .where(and(eq(prospectActivities.organizationId, organizationId), inArray(prospectActivities.prospectId, sourceProspectIds)))
+            .orderBy(desc(prospectActivities.occurredAt)).limit(500)
         : Promise.resolve([]),
     ]);
 
@@ -79,6 +94,12 @@ export class FleetAccount360Service {
       .filter((row) => !['draft','void'].includes(row.status))
       .reduce((sum, row) => sum + Number(row.total || 0), 0);
 
+    const revenueHistory = sourceProspectRows.map((prospect) => ({
+      prospect,
+      contacts: sourceProspectContactRows.filter((row) => row.prospectId === prospect.id),
+      activities: sourceProspectActivityRows.filter((row) => row.prospectId === prospect.id),
+    }));
+
     return {
       account,
       summary: {
@@ -94,6 +115,8 @@ export class FleetAccount360Service {
         outstandingBalance: outstandingBalance.toFixed(2),
         lifetimeInvoiced: lifetimeInvoiced.toFixed(2),
         communicationThreads: threadRows.length,
+        sourceProspects: sourceProspectRows.length,
+        prospectActivities: sourceProspectActivityRows.length,
       },
       contacts: contactRows,
       locations: locationRows,
@@ -105,6 +128,7 @@ export class FleetAccount360Service {
       recommendations: activeRecommendations,
       invoices: invoiceRows,
       communications: threadRows,
+      revenueHistory,
     };
   }
 }
