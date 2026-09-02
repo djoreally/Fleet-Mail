@@ -3,11 +3,13 @@ import { requireFleetOrganization } from './fleetAuth.js';
 import { resolveAgentRuntimeOrganization, searchAgentRuntimeContext } from './agentRuntimeSearch.js';
 import { searchAgentOperationalContext } from './agentRuntimeOperations.js';
 import { planAgentTools } from './agentToolRouter.js';
+import { maintenanceIntelligenceService } from './maintenanceIntelligence.js';
+import { financialReadModelService } from './financialReadModel.js';
 
 const FLEET_ACTION_POLICY = `Fleet OS agent tool policy.
 
 Live reads are organization-scoped and may be used directly when present in the trusted runtime results below.
-All writes are proposals only. Never claim a record, email, calendar event, browser interaction, payment, invoice, schedule, dispatch, inspection, authorization, or work order was created or changed until the confirmation-gated executor returns success.
+All writes are proposals only. Never claim a record, email, calendar event, browser interaction, payment, invoice, schedule, dispatch, inspection, authorization, prospect conversion, or work order was created or changed until the confirmation-gated executor returns success.
 Browserbase is explicit-action-only. Never use Browserbase as a research fallback. Firecrawl is the research tool. A browser-mode plan describes intent only and does not authorize execution.
 
 Supported confirmation-gated actions:
@@ -16,12 +18,13 @@ Supported confirmation-gated actions:
 - fleet.work_order.create
 - fleet.work_order.transition
 - fleet.authorization.decision
+- fleet.prospect.convert
 
 For one of those requests, prepare exactly one reviewable block:
 \`\`\`json:agent_action
 {"kind":"supported.action.kind","payload":{}}
 \`\`\`
-Use the exact action payload contract. Work-order creation requires vehicleId and complaint. Work-order transition requires workOrderId and status. Authorization decision requires authorizationId and decision of authorized or rejected. Email requires to, subject, and text. Calendar requires summary, start, and end.
+Use the exact action payload contract. Work-order creation requires vehicleId and complaint. Work-order transition requires workOrderId and status. Authorization decision requires authorizationId and decision of authorized or rejected. Prospect conversion requires prospectId. Email requires to, subject, and text. Calendar requires summary, start, and end.
 
 Any other mutation is not executable yet: explain that it requires a controlled action implementation. Never translate an unsupported mutation into a nearby supported action.
 Use canonical IDs from trusted runtime data. If a requested record is ambiguous or no canonical ID is available, ask for the minimum clarification instead of guessing. Never construct organization IDs or entity IDs.`;
@@ -36,7 +39,6 @@ function latestUserMessageIndex(messages: unknown[]) {
 
 async function resolveOrganization(req: Request) {
   if (req.header('authorization')?.startsWith('Bearer ')) {
-    // An invalid bearer token must fail closed; never downgrade to caller-supplied inbox context.
     return requireFleetOrganization(req);
   }
   return resolveAgentRuntimeOrganization(String(req.body?.contextInbox || ''));
@@ -59,14 +61,17 @@ export async function fleetAgentRuntimeMiddleware(req: Request, res: Response, n
     const organizationId = await resolveOrganization(req);
     if (!organizationId) return next();
 
-    const [coreRuntime, operations] = await Promise.all([
+    const wantsFinancialDashboard = toolPlan.readTools.some((tool) => ['financials.search', 'financials.summary', 'invoices.search', 'payments.search'].includes(tool));
+    const [coreRuntime, operations, maintenance, financials] = await Promise.all([
       searchAgentRuntimeContext(organizationId, latestUserText),
       searchAgentOperationalContext(organizationId, latestUserText, toolPlan.readTools),
+      toolPlan.readTools.includes('maintenance.search') ? maintenanceIntelligenceService.attention(organizationId) : Promise.resolve(null),
+      wantsFinancialDashboard ? financialReadModelService.dashboard(organizationId) : Promise.resolve(null),
     ]);
-    const runtime = { ...coreRuntime, operations };
+    const runtime = { ...coreRuntime, operations, maintenanceIntelligence: maintenance, financials };
     const hasCoreMatches = Object.values(coreRuntime.fleet || {}).some((value) => Array.isArray(value) && value.length > 0);
     const hasOperationalMatches = Object.values(operations).some((value) => Array.isArray(value) && value.length > 0);
-    const hasRuntimeMatches = hasCoreMatches || hasOperationalMatches || coreRuntime.emails.length > 0;
+    const hasRuntimeMatches = hasCoreMatches || hasOperationalMatches || coreRuntime.emails.length > 0 || Boolean(maintenance) || Boolean(financials);
     const selectedTools = toolPlan.readTools.join(', ');
 
     const runtimeContext = hasRuntimeMatches
