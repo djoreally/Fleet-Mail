@@ -8,6 +8,7 @@ import { FleetAuthError, fleetAuthFailure, requireFleetOrganization } from '../s
 import { createWorkOrder } from '../services/operationsPersistence.js';
 import { workOrderExecutionService } from '../services/workOrderExecution.js';
 import { prospectingService } from '../services/prospecting.js';
+import { prospectOutreachService } from '../services/prospectOutreach.js';
 
 export const agentActionsRouter = Router();
 const consumedProposals = new Set<string>();
@@ -36,12 +37,9 @@ agentActionsRouter.post('/execute', async (req, res) => {
       const result = await client.inboxes.messages.send(serverConfig.defaultInbox, mailPayload);
       if (prospectId) {
         const externalMessageId = String(result?.message_id || result?.messageId || result?.id || '');
-        await prospectingService.recordOutreach(organizationId, prospectId, {
-          to: proposal.payload.to,
-          subject: proposal.payload.subject,
-          text: proposal.payload.text,
-          contactId: proposal.payload.contactId,
-          externalMessageId,
+        await prospectOutreachService.recordSent(organizationId, prospectId, {
+          to: proposal.payload.to, subject: proposal.payload.subject, text: proposal.payload.text,
+          contactId: proposal.payload.contactId, externalMessageId,
         });
       }
       return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result });
@@ -50,9 +48,7 @@ agentActionsRouter.post('/execute', async (req, res) => {
     if (proposal.kind === 'calendar.create') {
       const tokens = readGoogleTokens(req);
       if (!tokens) return res.status(401).json({ error: 'Connect Google before creating calendar events' });
-      const result = await googleFetch<any>('https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all', tokens, {
-        method: 'POST', body: JSON.stringify(proposal.payload),
-      });
+      const result = await googleFetch<any>('https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all', tokens, { method: 'POST', body: JSON.stringify(proposal.payload) });
       writeGoogleTokens(res, result.tokens);
       return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result: result.data });
     }
@@ -71,7 +67,6 @@ agentActionsRouter.post('/execute', async (req, res) => {
       const result = await workOrderExecutionService.decideAuthorization(organizationId, String(proposal.payload.authorizationId), decision, proposal.payload);
       return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result });
     }
-
     throw new Error('Unsupported agent action');
   } catch (error) {
     if (proposalId) consumedProposals.delete(proposalId);
