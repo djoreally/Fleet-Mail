@@ -3,6 +3,7 @@ import { FleetAuthError, fleetAuthFailure, requireFleetOrganization } from '../s
 import { prospectingService } from '../services/prospecting.js';
 import { prospectOutreachService } from '../services/prospectOutreach.js';
 import { prospectDiscoveryService } from '../services/prospectDiscovery.js';
+import { prospectInboxSyncService } from '../services/prospectInboxSync.js';
 import { createAgentActionProposal } from '../services/agentActions.js';
 
 export const prospectingRouter=Router();
@@ -10,6 +11,7 @@ const fail=(res:any,error:unknown)=>{if(error instanceof FleetAuthError)return f
 
 prospectingRouter.get('/prospects',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.json({prospects:await prospectingService.list(org,{search:String(req.query.search||''),stage:String(req.query.stage||'')})});}catch(e){return fail(res,e)}});
 prospectingRouter.post('/prospects/discover',async(req,res)=>{try{await requireFleetOrganization(req);return res.json(await prospectDiscoveryService.discover(req.body??{}));}catch(e){return fail(res,e)}});
+prospectingRouter.post('/prospects/sync-inbox',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.json(await prospectInboxSyncService.sync(org,Number(req.body?.limit)||50));}catch(e){return fail(res,e)}});
 prospectingRouter.post('/prospects',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.status(201).json({prospect:await prospectingService.create(org,req.body??{})});}catch(e){return fail(res,e)}});
 prospectingRouter.get('/prospects/:id',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.json(await prospectingService.get(org,req.params.id));}catch(e){return fail(res,e)}});
 prospectingRouter.patch('/prospects/:id',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.json({prospect:await prospectingService.update(org,req.params.id,req.body??{})});}catch(e){return fail(res,e)}});
