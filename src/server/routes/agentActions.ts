@@ -71,6 +71,10 @@ agentActionsRouter.post('/execute', async (req, res) => {
       const result = await workOrderExecutionService.decideAuthorization(organizationId, String(proposal.payload.authorizationId), decision, proposal.payload);
       return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result });
     }
+    if (proposal.kind === 'fleet.prospect.convert') {
+      const result = await prospectingService.convertToFleetAccount(organizationId, String(proposal.payload.prospectId));
+      return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result });
+    }
     throw new Error('Unsupported agent action');
   } catch (error) {
     if (proposalId) consumedProposals.delete(proposalId);
