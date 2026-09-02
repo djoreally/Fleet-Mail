@@ -27,6 +27,12 @@ describe('dispatch and technician execution hardening', () => {
     expect(source).toContain('assertDispatchSlot(token, org');
   });
 
+  it('never auto-closes a work order when an inspection is completed', () => {
+    const service = readFileSync('src/server/services/workOrderExecution.ts', 'utf8');
+    expect(service).toContain("this.transition(organizationId, inspection.workOrderId, 'review')");
+    expect(service).not.toContain("recommendations.length ? 'review' : 'complete'");
+  });
+
   it('cannot let a confirmed AI action bypass validated work-order completion', () => {
     const route = readFileSync('src/server/routes/agentActions.ts', 'utf8');
     expect(route).toContain("['complete', 'completed'].includes(status)");
