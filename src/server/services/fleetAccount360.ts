@@ -1,6 +1,6 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
-import { contacts, customers, emailThreads, invoices, locations, vehicles, workOrders } from '../../db/drizzleSchema.js';
+import { contacts, customers, emailThreads, inspectionItems, inspections, invoices, locations, maintenanceSchedules, vehicles, workOrders } from '../../db/drizzleSchema.js';
 
 function database() {
   const db = getDb();
@@ -9,6 +9,15 @@ function database() {
 }
 
 const OPEN_WORK_ORDER_STATUSES = new Set(['draft','scheduled','assigned','en_route','arrived','in_progress','review','authorization_pending','authorized']);
+const GOOD_CONDITIONS = new Set(['good','ok','pass']);
+
+function scheduleIsDue(schedule: typeof maintenanceSchedules.$inferSelect, vehicle: typeof vehicles.$inferSelect | undefined) {
+  if (!schedule.active || !vehicle) return false;
+  if (schedule.nextDueAt && schedule.nextDueAt.getTime() <= Date.now()) return true;
+  if (schedule.nextDueMileage != null && vehicle.mileage != null && schedule.nextDueMileage <= vehicle.mileage) return true;
+  if (schedule.nextDueEngineHours != null && vehicle.engineHours != null && schedule.nextDueEngineHours <= vehicle.engineHours) return true;
+  return false;
+}
 
 export class FleetAccount360Service {
   async get(organizationId: string, customerId: string) {
@@ -29,16 +38,41 @@ export class FleetAccount360Service {
         .orderBy(vehicles.unitNumber),
       db.select().from(workOrders)
         .where(and(eq(workOrders.organizationId, organizationId), eq(workOrders.customerId, customerId)))
-        .orderBy(desc(workOrders.updatedAt)).limit(100),
+        .orderBy(desc(workOrders.updatedAt)).limit(200),
       db.select().from(invoices)
         .where(and(eq(invoices.organizationId, organizationId), eq(invoices.customerId, customerId)))
-        .orderBy(desc(invoices.createdAt)).limit(100),
+        .orderBy(desc(invoices.createdAt)).limit(200),
       db.select({ id: emailThreads.id, subject: emailThreads.subject, workOrderId: emailThreads.workOrderId, lastMessageAt: emailThreads.lastMessageAt, updatedAt: emailThreads.updatedAt })
         .from(emailThreads)
         .where(and(eq(emailThreads.organizationId, organizationId), eq(emailThreads.customerId, customerId)))
-        .orderBy(desc(emailThreads.lastMessageAt)).limit(50),
+        .orderBy(desc(emailThreads.lastMessageAt)).limit(100),
     ]);
 
+    const vehicleIds = vehicleRows.map((row) => row.id);
+    const workOrderIds = workOrderRows.map((row) => row.id);
+    const [scheduleRows, inspectionRows] = await Promise.all([
+      vehicleIds.length
+        ? db.select().from(maintenanceSchedules)
+            .where(and(eq(maintenanceSchedules.organizationId, organizationId), inArray(maintenanceSchedules.vehicleId, vehicleIds)))
+            .orderBy(maintenanceSchedules.nextDueAt)
+        : Promise.resolve([]),
+      workOrderIds.length
+        ? db.select().from(inspections)
+            .where(and(eq(inspections.organizationId, organizationId), inArray(inspections.workOrderId, workOrderIds)))
+            .orderBy(desc(inspections.createdAt))
+        : Promise.resolve([]),
+    ]);
+
+    const inspectionIds = inspectionRows.map((row) => row.id);
+    const itemRows = inspectionIds.length
+      ? await db.select().from(inspectionItems)
+          .where(and(eq(inspectionItems.organizationId, organizationId), inArray(inspectionItems.inspectionId, inspectionIds)))
+          .orderBy(desc(inspectionItems.updatedAt))
+      : [];
+
+    const vehicleById = new Map(vehicleRows.map((row) => [row.id, row]));
+    const dueMaintenance = scheduleRows.filter((schedule) => scheduleIsDue(schedule, vehicleById.get(schedule.vehicleId)));
+    const activeRecommendations = itemRows.filter((item) => Boolean(item.recommendation) && !GOOD_CONDITIONS.has(String(item.condition).toLowerCase()));
     const openWorkOrders = workOrderRows.filter((row) => OPEN_WORK_ORDER_STATUSES.has(row.status));
     const outstandingBalance = invoiceRows.reduce((sum, row) => sum + Number(row.balanceDue || 0), 0);
     const lifetimeInvoiced = invoiceRows
@@ -52,7 +86,11 @@ export class FleetAccount360Service {
         locations: locationRows.length,
         vehicles: vehicleRows.length,
         activeVehicles: vehicleRows.filter((row) => row.status === 'active').length,
+        maintenanceSchedules: scheduleRows.filter((row) => row.active).length,
+        dueMaintenance: dueMaintenance.length,
         openWorkOrders: openWorkOrders.length,
+        inspections: inspectionRows.length,
+        activeRecommendations: activeRecommendations.length,
         outstandingBalance: outstandingBalance.toFixed(2),
         lifetimeInvoiced: lifetimeInvoiced.toFixed(2),
         communicationThreads: threadRows.length,
@@ -60,7 +98,11 @@ export class FleetAccount360Service {
       contacts: contactRows,
       locations: locationRows,
       vehicles: vehicleRows,
+      maintenanceSchedules: scheduleRows,
+      dueMaintenance,
       workOrders: workOrderRows,
+      inspections: inspectionRows.map((inspection) => ({ ...inspection, items: itemRows.filter((item) => item.inspectionId === inspection.id) })),
+      recommendations: activeRecommendations,
       invoices: invoiceRows,
       communications: threadRows,
     };
