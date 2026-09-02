@@ -1,12 +1,21 @@
 export type AgentReadTool =
   | 'prospects.search'
+  | 'prospectActivity.search'
   | 'contacts.search'
+  | 'locations.search'
   | 'fleetAccounts.search'
   | 'vehicles.search'
-  | 'workOrders.search'
   | 'maintenance.search'
-  | 'prospectActivity.search'
-  | 'email.search';
+  | 'workOrders.search'
+  | 'schedule.search'
+  | 'dispatch.search'
+  | 'inspections.search'
+  | 'authorizations.search'
+  | 'financials.search'
+  | 'invoices.search'
+  | 'payments.search'
+  | 'email.search'
+  | 'documents.search';
 
 export type AgentWebMode = 'none' | 'research' | 'browser';
 
@@ -16,71 +25,56 @@ export interface AgentToolPlan {
   reason: string;
 }
 
+export const AGENT_READ_TOOL_CATALOG: readonly AgentReadTool[] = [
+  'prospects.search', 'prospectActivity.search', 'contacts.search', 'locations.search',
+  'fleetAccounts.search', 'vehicles.search', 'maintenance.search', 'workOrders.search',
+  'schedule.search', 'dispatch.search', 'inspections.search', 'authorizations.search',
+  'financials.search', 'invoices.search', 'payments.search', 'email.search', 'documents.search',
+] as const;
+
 const includesAny = (text: string, terms: string[]) => terms.some((term) => text.includes(term));
 
 export function planAgentTools(userText: string): AgentToolPlan {
   const source = String(userText || '');
   const text = source.toLowerCase();
   const tools = new Set<AgentReadTool>();
+  const add = (...selected: AgentReadTool[]) => selected.forEach((tool) => tools.add(tool));
 
   const personIntent = includesAny(text, ['who is ', 'contact', 'email address', 'phone number', 'decision maker', 'manager', 'owner']);
   const prospectIntent = includesAny(text, ['prospect', 'lead', 'pipeline', 'opportunity', 'qualified', 'outreach', 'follow up', 'follow-up']);
   const accountIntent = includesAny(text, ['customer', 'client', 'fleet account', 'company']);
+  const locationIntent = includesAny(text, ['location', 'service address', 'billing address', 'where is', 'site ']);
   const vehicleIntent = includesAny(text, ['vehicle', 'unit ', 'vin', 'truck', 'van', 'oil filter', 'oil type', 'oil capacity', 'mileage', 'engine hours']);
   const workOrderIntent = includesAny(text, ['work order', 'wo-', 'service order', 'repair order', 'scheduled service']);
   const maintenanceIntent = includesAny(text, ['maintenance', 'pm ', 'preventive', 'due', 'overdue', 'service interval', 'next service']);
+  const scheduleIntent = includesAny(text, ['schedule', 'appointment', 'calendar', 'availability', 'when is', 'reschedule']);
+  const dispatchIntent = includesAny(text, ['dispatch', 'technician', 'assigned', 'en route', 'arrived', 'resource']);
+  const inspectionIntent = includesAny(text, ['inspection', 'inspect', 'condition', 'measurement', 'tread', 'brake pad', 'recommendation']);
+  const authorizationIntent = includesAny(text, ['authorization', 'authorize', 'approval', 'approve', 'reject', 'decline', 'po required']);
+  const financialIntent = includesAny(text, ['financial', 'revenue', 'profit', 'cost', 'labor', 'parts', 'fluid', 'estimate', 'aging']);
+  const invoiceIntent = includesAny(text, ['invoice', 'balance due', 'receivable', 'billing', 'due date']);
+  const paymentIntent = includesAny(text, ['payment', 'paid', 'unpaid', 'refund', 'stripe', 'transaction']);
   const emailIntent = includesAny(text, ['email', 'inbox', 'message', 'thread', 'reply', 'replied', 'conversation', 'sent', 'wrote', 'said']);
+  const documentIntent = includesAny(text, ['document', 'attachment', 'pdf', 'docx', 'file ', 'photo', 'image']);
 
-  if (personIntent) {
-    tools.add('contacts.search');
-    tools.add('prospects.search');
-    tools.add('fleetAccounts.search');
-    tools.add('email.search');
-  }
-  if (prospectIntent) {
-    tools.add('prospects.search');
-    tools.add('contacts.search');
-    tools.add('prospectActivity.search');
-    tools.add('email.search');
-  }
-  if (accountIntent) {
-    tools.add('fleetAccounts.search');
-    tools.add('contacts.search');
-    tools.add('prospects.search');
-    tools.add('vehicles.search');
-    tools.add('workOrders.search');
-    tools.add('email.search');
-  }
-  if (vehicleIntent) {
-    tools.add('vehicles.search');
-    tools.add('fleetAccounts.search');
-    tools.add('workOrders.search');
-    tools.add('maintenance.search');
-  }
-  if (workOrderIntent) {
-    tools.add('workOrders.search');
-    tools.add('vehicles.search');
-    tools.add('fleetAccounts.search');
-  }
-  if (maintenanceIntent) {
-    tools.add('maintenance.search');
-    tools.add('vehicles.search');
-    tools.add('workOrders.search');
-    tools.add('fleetAccounts.search');
-  }
-  if (emailIntent) {
-    tools.add('email.search');
-    tools.add('contacts.search');
-    tools.add('prospects.search');
-    tools.add('fleetAccounts.search');
-  }
+  if (personIntent) add('contacts.search', 'prospects.search', 'fleetAccounts.search', 'email.search');
+  if (prospectIntent) add('prospects.search', 'contacts.search', 'prospectActivity.search', 'email.search');
+  if (accountIntent) add('fleetAccounts.search', 'contacts.search', 'locations.search', 'prospects.search', 'vehicles.search', 'workOrders.search', 'email.search');
+  if (locationIntent) add('locations.search', 'fleetAccounts.search', 'vehicles.search', 'schedule.search');
+  if (vehicleIntent) add('vehicles.search', 'fleetAccounts.search', 'workOrders.search', 'maintenance.search', 'documents.search');
+  if (workOrderIntent) add('workOrders.search', 'vehicles.search', 'fleetAccounts.search', 'schedule.search', 'dispatch.search', 'inspections.search', 'authorizations.search', 'financials.search');
+  if (maintenanceIntent) add('maintenance.search', 'vehicles.search', 'workOrders.search', 'fleetAccounts.search');
+  if (scheduleIntent) add('schedule.search', 'dispatch.search', 'workOrders.search', 'vehicles.search', 'locations.search');
+  if (dispatchIntent) add('dispatch.search', 'schedule.search', 'workOrders.search');
+  if (inspectionIntent) add('inspections.search', 'authorizations.search', 'workOrders.search', 'vehicles.search', 'documents.search');
+  if (authorizationIntent) add('authorizations.search', 'inspections.search', 'workOrders.search', 'financials.search');
+  if (financialIntent) add('financials.search', 'invoices.search', 'payments.search', 'workOrders.search', 'fleetAccounts.search');
+  if (invoiceIntent) add('invoices.search', 'payments.search', 'financials.search', 'fleetAccounts.search', 'workOrders.search');
+  if (paymentIntent) add('payments.search', 'invoices.search', 'financials.search', 'fleetAccounts.search');
+  if (emailIntent) add('email.search', 'contacts.search', 'prospects.search', 'fleetAccounts.search');
+  if (documentIntent) add('documents.search', 'fleetAccounts.search', 'vehicles.search', 'workOrders.search');
 
-  if (!tools.size && /\b[A-Z][a-z]{2,}\b/.test(source)) {
-    tools.add('contacts.search');
-    tools.add('prospects.search');
-    tools.add('fleetAccounts.search');
-    tools.add('email.search');
-  }
+  if (!tools.size && /\b[A-Z][a-z]{2,}\b/.test(source)) add('contacts.search', 'prospects.search', 'fleetAccounts.search', 'email.search');
 
   const explicitBrowser = includesAny(text, ['browse ', 'browser ', 'open the website', 'go to ', 'click ', 'fill out', 'fill in', 'submit form', 'log in', 'login to', 'reorder', 'place order', 'purchase', 'upload to']);
   const webResearch = /https?:\/\//i.test(source) || includesAny(text, ['research ', 'look up online', 'search the web', 'website', 'web research']);

@@ -15,6 +15,7 @@ import { maintenanceIntelligenceRouter } from './routes/maintenanceIntelligence.
 import { prospectingRouter } from './routes/prospecting.js';
 import { prospectWebhookService, verifyAgentMailWebhook } from './services/prospectWebhook.js';
 import { fleetAgentRuntimeMiddleware } from './services/fleetAgentRuntime.js';
+import { chatAttachmentExtractionMiddleware } from './services/chatAttachmentExtraction.js';
 
 export function createApp() {
   const app = express();
@@ -38,6 +39,7 @@ export function createApp() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
+  app.use('/api/chat', chatAttachmentExtractionMiddleware);
   app.use('/api/chat', fleetAgentRuntimeMiddleware);
 
   app.use('/api', apiRouter);
