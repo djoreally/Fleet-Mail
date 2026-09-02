@@ -7,6 +7,7 @@ import { readGoogleTokens, writeGoogleTokens } from './google.js';
 import { FleetAuthError, fleetAuthFailure, requireFleetOrganization } from '../services/fleetAuth.js';
 import { createWorkOrder } from '../services/operationsPersistence.js';
 import { workOrderExecutionService } from '../services/workOrderExecution.js';
+import { prospectingService } from '../services/prospecting.js';
 
 export const agentActionsRouter = Router();
 const consumedProposals = new Set<string>();
@@ -26,9 +27,23 @@ agentActionsRouter.post('/execute', async (req, res) => {
     consumedProposals.add(proposal.id);
 
     if (proposal.kind === 'email.send') {
+      const organizationId = await requireFleetOrganization(req);
+      const prospectId = proposal.payload.prospectId ? String(proposal.payload.prospectId) : null;
+      if (prospectId) await prospectingService.get(organizationId, prospectId);
       const client = getAgentMailClient() as any;
       if (!client) throw new Error('AgentMail is not configured');
-      const result = await client.inboxes.messages.send(serverConfig.defaultInbox, proposal.payload);
+      const mailPayload = { to: proposal.payload.to, subject: proposal.payload.subject, text: proposal.payload.text };
+      const result = await client.inboxes.messages.send(serverConfig.defaultInbox, mailPayload);
+      if (prospectId) {
+        const externalMessageId = String(result?.message_id || result?.messageId || result?.id || '');
+        await prospectingService.recordOutreach(organizationId, prospectId, {
+          to: proposal.payload.to,
+          subject: proposal.payload.subject,
+          text: proposal.payload.text,
+          contactId: proposal.payload.contactId,
+          externalMessageId,
+        });
+      }
       return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result });
     }
 
@@ -48,21 +63,12 @@ agentActionsRouter.post('/execute', async (req, res) => {
       return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result });
     }
     if (proposal.kind === 'fleet.work_order.transition') {
-      const result = await workOrderExecutionService.transition(
-        organizationId,
-        String(proposal.payload.workOrderId),
-        String(proposal.payload.status),
-      );
+      const result = await workOrderExecutionService.transition(organizationId, String(proposal.payload.workOrderId), String(proposal.payload.status));
       return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result });
     }
     if (proposal.kind === 'fleet.authorization.decision') {
       const decision = String(proposal.payload.decision) as 'authorized' | 'rejected';
-      const result = await workOrderExecutionService.decideAuthorization(
-        organizationId,
-        String(proposal.payload.authorizationId),
-        decision,
-        proposal.payload,
-      );
+      const result = await workOrderExecutionService.decideAuthorization(organizationId, String(proposal.payload.authorizationId), decision, proposal.payload);
       return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result });
     }
 
