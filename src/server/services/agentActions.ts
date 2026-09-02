@@ -5,7 +5,8 @@ export type AgentActionKind =
   | 'calendar.create'
   | 'fleet.work_order.create'
   | 'fleet.work_order.transition'
-  | 'fleet.authorization.decision';
+  | 'fleet.authorization.decision'
+  | 'fleet.prospect.convert';
 
 export interface AgentActionProposal {
   id: string;
@@ -99,6 +100,10 @@ export function normalizeAgentAction(kind: unknown, raw: unknown): { kind: Agent
       purchaseOrderNumber: optionalText(source.purchaseOrderNumber, 100), notes: optionalText(source.notes, 2_000),
     };
     return { kind, payload, summary: `${decision === 'authorized' ? 'Approve' : 'Reject'} authorization ${payload.authorizationId}` };
+  }
+  if (kind === 'fleet.prospect.convert') {
+    const payload = { prospectId: requiredText(source.prospectId, 'Prospect', 100) };
+    return { kind, payload, summary: `Convert prospect ${payload.prospectId} into a Fleet Account` };
   }
   throw new Error('Unsupported agent action');
 }
