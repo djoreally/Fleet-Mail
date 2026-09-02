@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
 import {
-  appointments, authorizations, dispatchAssignments, documents, inspections, invoiceLineItems,
+  appointments, authorizations, dispatchAssignments, documents, inspections,
   invoices, locations, payments, serviceLines, technicians,
 } from '../../db/drizzleSchema.js';
 import type { AgentReadTool } from './agentToolRouter.js';
