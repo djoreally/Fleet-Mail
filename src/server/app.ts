@@ -7,6 +7,7 @@ import { operationsRouter } from './routes/operations.js';
 import { customerPartsRouter } from './routes/customerParts.js';
 import { scheduleDispatchRouter } from './routes/scheduleDispatch.js';
 import { financialDocumentsRouter } from './routes/financialDocuments.js';
+import { paymentReconciliationRouter } from './routes/paymentReconciliation.js';
 import { vehicle360Router } from './routes/vehicle360.js';
 import { workOrderExecutionRouter } from './routes/workOrderExecution.js';
 import { workOrderCompletionRouter } from './routes/workOrderCompletion.js';
@@ -51,6 +52,7 @@ export function createApp() {
   app.use('/api/operations', workOrderExecutionRouter);
   app.use('/api/operations', prospectingRouter);
   app.use('/api/fleet-operations', scheduleDispatchRouter);
+  app.use('/api/fleet', paymentReconciliationRouter);
   app.use('/api/fleet', financialDocumentsRouter);
 
   return app;
