@@ -41,8 +41,33 @@ export class PaymentReconciliationService {
           [organizationId, invoiceId, provider, externalPaymentId],
         );
         if (existing.rows[0]) {
+          const existingPayment = existing.rows[0];
+          if (existingPayment.status === status) {
+            await client.query('COMMIT');
+            return { payment: existingPayment, invoice, idempotentReplay: true };
+          }
+          if (existingPayment.status !== 'pending' || status !== 'paid') {
+            throw new PaymentReconciliationError(409, 'Payment status transition is not allowed');
+          }
+          const balance = Number(invoice.balance_due || 0);
+          if (amount > balance + 0.001) throw new PaymentReconciliationError(409, 'Payment exceeds the invoice balance');
+          if (Math.abs(Number(existingPayment.amount) - amount) > 0.001) {
+            throw new PaymentReconciliationError(409, 'Provider payment amount does not match the pending payment');
+          }
+          const promoted = await client.query(
+            `UPDATE public.payments SET status='paid',paid_at=$1
+             WHERE organization_id=$2 AND id=$3 AND status='pending' RETURNING *`,
+            [paidAt, organizationId, existingPayment.id],
+          );
+          const newBalance = Math.max(0, Math.round((balance - amount) * 100) / 100);
+          const invoiceStatus = newBalance === 0 ? 'paid' : (invoice.status === 'draft' ? 'open' : invoice.status);
+          const updated = await client.query(
+            `UPDATE public.invoices SET balance_due=$1,status=$2,updated_at=now()
+             WHERE organization_id=$3 AND id=$4 RETURNING *`,
+            [newBalance.toFixed(2), invoiceStatus, organizationId, invoiceId],
+          );
           await client.query('COMMIT');
-          return { payment: existing.rows[0], invoice, idempotentReplay: true };
+          return { payment: promoted.rows[0], invoice: updated.rows[0], idempotentReplay: false, reconciledPending: true };
         }
       }
 

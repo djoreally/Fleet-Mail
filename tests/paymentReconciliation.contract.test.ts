@@ -16,6 +16,14 @@ describe('invoice payment reconciliation contract', () => {
     expect(source).toContain("newBalance === 0 ? 'paid'");
   });
 
+  it('promotes a matching pending provider payment without inserting a duplicate', () => {
+    const source = readFileSync('src/server/services/paymentReconciliation.ts', 'utf8');
+    expect(source).toContain("existingPayment.status !== 'pending' || status !== 'paid'");
+    expect(source).toContain("SET status='paid',paid_at=$1");
+    expect(source).toContain('Provider payment amount does not match the pending payment');
+    expect(source).toContain('reconciledPending: true');
+  });
+
   it('runs payment insert and invoice update inside a transaction', () => {
     const source = readFileSync('src/server/services/paymentReconciliation.ts', 'utf8');
     expect(source).toContain("client.query('BEGIN')");
