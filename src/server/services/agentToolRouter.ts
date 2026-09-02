@@ -5,6 +5,9 @@ export type AgentReadTool =
   | 'vehicles.search'
   | 'workOrders.search'
   | 'maintenance.search'
+  | 'invoices.search'
+  | 'payments.search'
+  | 'financials.summary'
   | 'prospectActivity.search'
   | 'email.search';
 
@@ -29,6 +32,7 @@ export function planAgentTools(userText: string): AgentToolPlan {
   const vehicleIntent = includesAny(text, ['vehicle', 'unit ', 'vin', 'truck', 'van', 'oil filter', 'oil type', 'oil capacity', 'mileage', 'engine hours']);
   const workOrderIntent = includesAny(text, ['work order', 'wo-', 'service order', 'repair order', 'scheduled service']);
   const maintenanceIntent = includesAny(text, ['maintenance', 'pm ', 'preventive', 'due', 'overdue', 'service interval', 'next service']);
+  const financialIntent = includesAny(text, ['invoice', 'payment', 'balance', 'receivable', 'aging', 'revenue', 'profit', 'margin', 'financial', 'paid', 'unpaid', 'past due']);
   const emailIntent = includesAny(text, ['email', 'inbox', 'message', 'thread', 'reply', 'replied', 'conversation', 'sent', 'wrote', 'said']);
 
   if (personIntent) {
@@ -67,6 +71,13 @@ export function planAgentTools(userText: string): AgentToolPlan {
     tools.add('vehicles.search');
     tools.add('workOrders.search');
     tools.add('fleetAccounts.search');
+  }
+  if (financialIntent) {
+    tools.add('invoices.search');
+    tools.add('payments.search');
+    tools.add('financials.summary');
+    tools.add('fleetAccounts.search');
+    tools.add('workOrders.search');
   }
   if (emailIntent) {
     tools.add('email.search');
