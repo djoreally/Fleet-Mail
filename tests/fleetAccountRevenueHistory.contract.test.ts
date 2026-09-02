@@ -9,11 +9,11 @@ describe('Fleet Account revenue provenance contract', () => {
     expect(source).toContain('revenueHistory');
   });
 
-  it('preserves prospect contacts and AgentMail-backed activity history under organization scope', () => {
+  it('preserves prospect contacts and activity history under organization scope', () => {
     const source = readFileSync('src/server/services/fleetAccount360.ts', 'utf8');
     expect(source).toContain('prospectContacts.organizationId, organizationId');
     expect(source).toContain('prospectActivities.organizationId, organizationId');
     expect(source).toContain('sourceProspectActivityRows');
-    expect(source).toContain('externalMessageId');
+    expect(source).toContain('db.select().from(prospectActivities)');
   });
 });
