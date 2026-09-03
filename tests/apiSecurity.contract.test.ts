@@ -53,4 +53,11 @@ describe('public API security boundaries', () => {
     expect(auth).toContain('allowedRoles.includes(role)');
     expect(app).toContain("requireFleetRole(req, ['owner', 'admin'])");
   });
+
+  it('sends confirmed AI email only through the authenticated organization inbox', () => {
+    const actions = readFileSync('src/server/routes/agentActions.ts', 'utf8');
+    expect(actions).toContain('resolveOrganizationAgentMailInbox(req)');
+    expect(actions).toContain('client.inboxes.messages.send(inbox, mailPayload)');
+    expect(actions).not.toContain('serverConfig.defaultInbox');
+  });
 });
