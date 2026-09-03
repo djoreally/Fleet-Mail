@@ -19,10 +19,12 @@ export type AgentReadTool =
   | 'documents.search';
 
 export type AgentWebMode = 'none' | 'research' | 'browser';
+export type AgentWebCapability = 'none' | 'research' | 'browse' | 'document' | 'form';
 
 export interface AgentToolPlan {
   readTools: AgentReadTool[];
   webMode: AgentWebMode;
+  webCapability: AgentWebCapability;
   reason: string;
 }
 
@@ -34,6 +36,21 @@ export const AGENT_READ_TOOL_CATALOG: readonly AgentReadTool[] = [
 ] as const;
 
 const includesAny = (text: string, terms: string[]) => terms.some((term) => text.includes(term));
+
+function webCapabilityFor(source: string, text: string): AgentWebCapability {
+  const hasUrl = /https?:\/\//i.test(source);
+  const formIntent = includesAny(text, ['fill out', 'fill in', 'complete the form', 'vendor registration', 'registration form', 'application form', 'submit form']);
+  const documentIntent = includesAny(text, ['download ', 'download the', 'receipt', 'pdf', 'document from', 'parse the document', 'extract the pdf']);
+  const browseIntent = includesAny(text, ['browse ', 'browser ', 'open the website', 'go to ', 'click ', 'log in', 'login to', 'navigate to', 'open this page'])
+    || (hasUrl && /^\s*(?:open|visit|navigate|go)\b/i.test(source));
+  const researchIntent = hasUrl || includesAny(text, ['research ', 'look up online', 'search the web', 'website', 'web research', 'find companies', 'find prospects', 'search online']);
+
+  if (formIntent) return 'form';
+  if (documentIntent && hasUrl) return 'document';
+  if (browseIntent) return 'browse';
+  if (researchIntent) return 'research';
+  return 'none';
+}
 
 export function planAgentTools(userText: string): AgentToolPlan {
   const source = String(userText || '');
@@ -77,12 +94,11 @@ export function planAgentTools(userText: string): AgentToolPlan {
 
   if (!tools.size && /\b[A-Z][a-z]{2,}\b/.test(source)) add('contacts.search', 'prospects.search', 'fleetAccounts.search', 'email.search');
 
-  const explicitBrowser = includesAny(text, ['browse ', 'browser ', 'open the website', 'go to ', 'click ', 'fill out', 'fill in', 'submit form', 'log in', 'login to', 'reorder', 'place order', 'purchase', 'upload to']);
-  const webResearch = /https?:\/\//i.test(source) || includesAny(text, ['research ', 'look up online', 'search the web', 'website', 'web research']);
-
+  const webCapability = webCapabilityFor(source, text);
   return {
     readTools: [...tools],
-    webMode: explicitBrowser ? 'browser' : webResearch ? 'research' : 'none',
+    webCapability,
+    webMode: webCapability === 'research' ? 'research' : webCapability === 'none' ? 'none' : 'browser',
     reason: tools.size
       ? 'Selected from the user request using deterministic Fleet OS intent routing.'
       : 'No Fleet data lookup was required by the request.',

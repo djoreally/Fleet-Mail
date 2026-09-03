@@ -30,8 +30,15 @@ describe('Fleet agent tool router', () => {
     expect(planAgentTools('Find the inspection PDF attachment for Unit 21').readTools).toEqual(expect.arrayContaining(['documents.search', 'inspections.search', 'vehicles.search']));
   });
 
-  it('uses research mode for web research and browser mode only for explicit interaction', () => {
-    expect(planAgentTools('Research https://example.com for fleet information').webMode).toBe('research');
-    expect(planAgentTools('Open the website and fill out the vendor registration form').webMode).toBe('browser');
+  it('uses one simple web capability contract', () => {
+    expect(planAgentTools('Research https://example.com for fleet information')).toMatchObject({ webMode: 'research', webCapability: 'research' });
+    expect(planAgentTools('Search the web for plumbing companies in Ambler')).toMatchObject({ webMode: 'research', webCapability: 'research' });
+    expect(planAgentTools('Open https://example.com and inspect the vendor page')).toMatchObject({ webMode: 'browser', webCapability: 'browse' });
+    expect(planAgentTools('Fill out the vendor registration form at https://example.com/vendor')).toMatchObject({ webMode: 'browser', webCapability: 'form' });
+    expect(planAgentTools('Download the PDF from https://example.com/receipt.pdf')).toMatchObject({ webMode: 'browser', webCapability: 'document' });
+  });
+
+  it('does not treat a plain company question as a browser task', () => {
+    expect(planAgentTools('Show me Acme Fleet account details').webCapability).toBe('none');
   });
 });
