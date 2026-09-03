@@ -3,7 +3,8 @@ import { callAICompletion } from '../services/ai.js';
 import { getAgentMailClient } from '../services/agentmail.js';
 import { AGENT_SKILLS, formatAgentPlainText, redactObject, redactSensitiveData } from '../services/agentSkills.js';
 import { createAgentActionProposal } from '../services/agentActions.js';
-import { crawlWebsite, extractWebsiteUrl } from '../services/firecrawl.js';
+import { planAgentTools, type AgentToolPlan } from '../services/agentToolRouter.js';
+import { executeWebCapability } from '../services/webCapabilityRouter.js';
 
 export const tenantChatRouter = Router();
 
@@ -46,19 +47,18 @@ tenantChatRouter.post('/', async (req, res) => {
       console.warn('Tenant AgentMail grounding unavailable:', error instanceof Error ? error.message : error);
     }
 
-    const latestUserText = [...(Array.isArray(messages) ? messages : [])].reverse().find((message: any) => message?.role === 'user')?.content || '';
-    const websiteUrl = extractWebsiteUrl(String(latestUserText));
-    let websiteResearch = null;
-    if (websiteUrl) {
-      if (!process.env.FIRECRAWL_API_KEY?.trim()) throw new Error('Website research is not configured.');
-      websiteResearch = await crawlWebsite(websiteUrl);
-    }
+    const latestUserText = String([...(Array.isArray(messages) ? messages : [])].reverse().find((message: any) => message?.role === 'user')?.content || '');
+    const toolPlan = (req.body?.agentToolPlan && typeof req.body.agentToolPlan === 'object'
+      ? req.body.agentToolPlan
+      : planAgentTools(latestUserText)) as AgentToolPlan;
+    const webResult = await executeWebCapability(latestUserText, toolPlan);
 
     const groundedContext = redactObject({
       activeInbox,
       selectedEmail: activeEmail || null,
       recentInbox,
-      websiteResearch,
+      fleetToolPlan: { readTools: toolPlan.readTools, webCapability: toolPlan.webCapability },
+      web: webResult.status === 'skipped' ? null : webResult,
       attachedDocuments: attachments.filter((file: any) => file.text || file.extractionError).map((file: any) => ({
         name: file.name,
         type: file.type,
@@ -67,14 +67,18 @@ tenantChatRouter.post('/', async (req, res) => {
       })),
     });
 
-    const systemPrompt = `You are the Fleet OS communication copilot.
+    const systemPrompt = `You are the Fleet OS agent. Keep the experience simple: understand the request, use only server-executed capabilities, then explain the result.
 Use the authenticated organization context supplied by the server. Never infer tenant identity from an inbox supplied by the user.
-Ground names, facts, deadlines, and claims in the supplied context. Clearly label assumptions and never invent search results.
+Ground names, facts, deadlines, and claims in the supplied context. Clearly label assumptions and never invent search results or execution success.
 Use the user's preferred ${personality} tone. Extract action items, owners, dates, blockers, and the safest next action.
-Never claim an email, calendar event, browser action, payment, invoice, schedule, dispatch, authorization, prospect conversion, or work-order change executed unless a confirmed executor returned success.
+Never emit provider commands, tool-call markup, XML-like function calls, JSON tool payloads, implementation names, or internal routing details in visible text.
+Do not say "I will try Firecrawl", "I switched to Browserbase", or otherwise narrate provider selection. Say what you are doing in user terms such as "I researched the company" or "I opened the page".
+The runtime owns provider selection: research/search uses the research capability; browser navigation/form/document tasks use the browser capability. You do not choose providers yourself.
+A web action succeeded only when Authenticated Fleet context.web.status is "success". If it is "failed" or "blocked", state the short user-facing reason and do not fabricate page content.
+Never claim an email, calendar event, browser submission, payment, invoice, schedule, dispatch, authorization, prospect conversion, or work-order change executed unless a confirmed executor returned success.
+Browser form work is prepare-only unless a separate confirmed executor reports submission success.
 For outbound email, you may prepare a reviewable email draft. Consequential actions remain confirmation-gated.
-The visible response must be plain human-readable text without Markdown headings, tables, or fenced code.
-Firecrawl is the information-research provider. Browserbase is reserved for explicit browser actions and is never a research fallback.
+The visible response must be plain human-readable text without Markdown headings, tables, fenced code, raw tool syntax, or provider jargon.
 
 If an email draft is useful, include exactly one hidden review block:
 \`\`\`json:email_draft
@@ -126,7 +130,21 @@ Authenticated Fleet context: ${JSON.stringify(groundedContext)}`;
       provider: aiResult.provider,
       emailDraft,
       actionProposal,
-      skillsUsed: [...AGENT_SKILLS.filter((skill: any) => typeof skill === 'string').slice(0, 0), 'tenant-grounding', 'context-memory', 'predictive-drafting', 'grounded-recall', ...(websiteResearch ? ['website-crawl'] : []), 'pii-redaction', 'sentinel'],
+      toolPlan: { readTools: toolPlan.readTools, webCapability: toolPlan.webCapability },
+      webExecution: {
+        capability: webResult.capability,
+        provider: webResult.provider,
+        status: webResult.status,
+        sourceUrls: webResult.sourceUrls,
+        error: webResult.error,
+        durationMs: webResult.durationMs,
+      },
+      skillsUsed: [
+        ...AGENT_SKILLS.filter((skill: any) => typeof skill === 'string').slice(0, 0),
+        'tenant-grounding', 'context-memory', 'predictive-drafting', 'grounded-recall',
+        ...(webResult.status === 'success' ? [`web:${webResult.capability}`] : []),
+        'pii-redaction', 'sentinel',
+      ],
     });
   } catch (error) {
     console.error('Tenant chat error:', error instanceof Error ? error.message : error);
