@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { serverConfig } from '../config.js';
 import { getAgentMailClient } from '../services/agentmail.js';
 import { createAgentActionProposal, verifyAgentActionProposal } from '../services/agentActions.js';
 import { googleFetch } from '../services/googleOAuth.js';
 import { readGoogleTokens, writeGoogleTokens } from './google.js';
 import { FleetAuthError, fleetAuthFailure, requireFleetOrganization } from '../services/fleetAuth.js';
+import { resolveOrganizationAgentMailInbox } from '../services/agentMailTenantBoundary.js';
 import { createWorkOrder } from '../services/operationsPersistence.js';
 import { workOrderExecutionService } from '../services/workOrderExecution.js';
 import { workOrderCompletionService } from '../services/workOrderCompletion.js';
@@ -28,14 +28,16 @@ agentActionsRouter.post('/execute', async (req, res) => {
     if (consumedProposals.has(proposal.id)) return res.status(409).json({ error: 'This action was already executed' });
     consumedProposals.add(proposal.id);
 
+    const organizationId = await requireFleetOrganization(req);
+
     if (proposal.kind === 'email.send') {
-      const organizationId = await requireFleetOrganization(req);
       const prospectId = proposal.payload.prospectId ? String(proposal.payload.prospectId) : null;
       if (prospectId) await prospectingService.get(organizationId, prospectId);
       const client = getAgentMailClient() as any;
       if (!client) throw new Error('AgentMail is not configured');
+      const inbox = await resolveOrganizationAgentMailInbox(req);
       const mailPayload = { to: proposal.payload.to, subject: proposal.payload.subject, text: proposal.payload.text };
-      const result = await client.inboxes.messages.send(serverConfig.defaultInbox, mailPayload);
+      const result = await client.inboxes.messages.send(inbox, mailPayload);
       if (prospectId) {
         const externalMessageId = String(result?.message_id || result?.messageId || result?.id || '');
         await prospectOutreachService.recordSent(organizationId, prospectId, {
@@ -54,7 +56,6 @@ agentActionsRouter.post('/execute', async (req, res) => {
       return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result: result.data });
     }
 
-    const organizationId = await requireFleetOrganization(req);
     if (proposal.kind === 'fleet.work_order.create') {
       const result = await createWorkOrder(organizationId, proposal.payload);
       return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result });

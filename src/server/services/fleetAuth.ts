@@ -9,6 +9,8 @@ export class FleetAuthError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
+type FleetRequest = Request & { fleetOrganizationId?: string; fleetMembershipRole?: string };
+
 function database() {
   const value = getDb();
   if (!value) throw new FleetAuthError(503, 'Production database is not configured');
@@ -43,6 +45,9 @@ function verifiedBearerClaims(authorization: string) {
 }
 
 export async function requireFleetOrganization(req: Request): Promise<string> {
+  const fleetReq = req as FleetRequest;
+  if (fleetReq.fleetOrganizationId) return fleetReq.fleetOrganizationId;
+
   const authorization = req.header('authorization');
   if (!authorization?.startsWith('Bearer ')) throw new FleetAuthError(401, 'Authentication required');
 
@@ -51,8 +56,6 @@ export async function requireFleetOrganization(req: Request): Promise<string> {
   });
   if (!response.ok) throw new FleetAuthError(401, 'Your session is invalid or expired');
   const identity = authUser(await response.json());
-  // The Auth service has already verified this bearer token. Claims are used
-  // only to fill identity fields omitted by some Neon Auth response versions.
   const claims = verifiedBearerClaims(authorization);
   const subject = String(identity?.id || identity?.userId || identity?.user_id || identity?.sub || claims?.sub || '');
   const email = String(identity?.email || identity?.emailAddress || identity?.email_address || identity?.user?.email || claims?.email || `${subject}@fleet.local`);
@@ -66,7 +69,7 @@ export async function requireFleetOrganization(req: Request): Promise<string> {
   }
 
   const requested = req.header('x-organization-id');
-  let memberships = await db.select({ organizationId: organizationMemberships.organizationId })
+  let memberships = await db.select({ organizationId: organizationMemberships.organizationId, role: organizationMemberships.role })
     .from(organizationMemberships)
     .where(and(eq(organizationMemberships.userId, user.id), eq(organizationMemberships.status, 'active')));
 
@@ -74,11 +77,21 @@ export async function requireFleetOrganization(req: Request): Promise<string> {
     const organizationId = randomUUID();
     await db.insert(organizations).values({ id: organizationId, name: `${user.name}'s Fleet`, slug: `fleet-${subject.replace(/[^a-z0-9]/gi, '').slice(0, 12).toLowerCase()}-${organizationId.slice(0, 6)}` });
     await db.insert(organizationMemberships).values({ id: randomUUID(), organizationId, userId: user.id, role: 'owner', status: 'active' });
-    memberships = [{ organizationId }];
+    memberships = [{ organizationId, role: 'owner' }];
   }
 
-  if (requested && !memberships.some((item) => item.organizationId === requested)) throw new FleetAuthError(403, 'You do not have access to this organization');
-  return requested || memberships[0].organizationId;
+  const selected = requested ? memberships.find((item) => item.organizationId === requested) : memberships[0];
+  if (!selected) throw new FleetAuthError(403, 'You do not have access to this organization');
+  fleetReq.fleetOrganizationId = selected.organizationId;
+  fleetReq.fleetMembershipRole = selected.role;
+  return selected.organizationId;
+}
+
+export async function requireFleetRole(req: Request, allowedRoles: string[]) {
+  await requireFleetOrganization(req);
+  const role = String((req as FleetRequest).fleetMembershipRole || '');
+  if (!allowedRoles.includes(role)) throw new FleetAuthError(403, 'Your organization role does not permit this operation');
+  return role;
 }
 
 export function fleetAuthFailure(res: any, error: unknown) {
