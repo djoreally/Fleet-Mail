@@ -41,7 +41,8 @@ function webCapabilityFor(source: string, text: string): AgentWebCapability {
   const hasUrl = /https?:\/\//i.test(source);
   const formIntent = includesAny(text, ['fill out', 'fill in', 'complete the form', 'vendor registration', 'registration form', 'application form', 'submit form']);
   const documentIntent = includesAny(text, ['download ', 'download the', 'receipt', 'pdf', 'document from', 'parse the document', 'extract the pdf']);
-  const browseIntent = includesAny(text, ['browse ', 'browser ', 'open the website', 'go to ', 'click ', 'log in', 'login to', 'navigate to', 'open this page']);
+  const browseIntent = includesAny(text, ['browse ', 'browser ', 'open the website', 'go to ', 'click ', 'log in', 'login to', 'navigate to', 'open this page'])
+    || (hasUrl && /^\s*(?:open|visit|navigate|go)\b/i.test(source));
   const researchIntent = hasUrl || includesAny(text, ['research ', 'look up online', 'search the web', 'website', 'web research', 'find companies', 'find prospects', 'search online']);
 
   if (formIntent) return 'form';
