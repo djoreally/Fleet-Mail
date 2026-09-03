@@ -14,16 +14,26 @@ import { workOrderExecutionRouter } from './routes/workOrderExecution.js';
 import { workOrderCompletionRouter } from './routes/workOrderCompletion.js';
 import { maintenanceIntelligenceRouter } from './routes/maintenanceIntelligence.js';
 import { prospectingRouter } from './routes/prospecting.js';
+import { tenantChatRouter } from './routes/chat.js';
 import { prospectWebhookService, verifyAgentMailWebhook } from './services/prospectWebhook.js';
 import { fleetAgentRuntimeMiddleware } from './services/fleetAgentRuntime.js';
 import { chatAttachmentExtractionMiddleware } from './services/chatAttachmentExtraction.js';
-import { fleetAuthFailure, requireFleetOrganization } from './services/fleetAuth.js';
+import { fleetAuthFailure, requireFleetOrganization, requireFleetRole } from './services/fleetAuth.js';
 import { enforceAgentMailInboxScope, resolveOrganizationAgentMailInbox } from './services/agentMailTenantBoundary.js';
 import { serverConfig } from './config.js';
 
 async function requireFleetSession(req: Request, res: Response, next: NextFunction) {
   try {
     await requireFleetOrganization(req);
+    return next();
+  } catch (error) {
+    return fleetAuthFailure(res, error);
+  }
+}
+
+async function requireFleetAdmin(req: Request, res: Response, next: NextFunction) {
+  try {
+    await requireFleetRole(req, ['owner', 'admin']);
     return next();
   } catch (error) {
     return fleetAuthFailure(res, error);
@@ -77,9 +87,18 @@ export function createApp() {
     return res.json(status);
   });
 
+  // Legacy utility surfaces are private. Database-management endpoints require
+  // an administrative organization role, not merely a valid login.
+  app.use('/api/vehicles', requireFleetSession);
+  app.use('/api/contacts', requireFleetSession);
+  app.use('/api/agent', requireFleetSession);
+  app.use('/api/neon', requireFleetAdmin);
+  app.use('/api/drizzle', requireFleetAdmin);
+
   // AI and communications surfaces can expose tenant data or cause external side
   // effects. They must always enter through a verified Fleet session.
   app.use('/api/chat', requireFleetSession);
+  app.use('/api/chat', enforceAgentMailInboxScope);
   app.use('/api/rewrite-tone', requireFleetSession);
   app.use('/api/generate-draft', requireFleetSession);
   app.use('/api/summarize-email', requireFleetSession);
@@ -88,6 +107,7 @@ export function createApp() {
 
   app.use('/api/chat', chatAttachmentExtractionMiddleware);
   app.use('/api/chat', fleetAgentRuntimeMiddleware);
+  app.use('/api/chat', tenantChatRouter);
 
   app.use('/api', apiRouter);
   app.use('/api', vehicle360Router);
