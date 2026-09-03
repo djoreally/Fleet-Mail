@@ -49,7 +49,8 @@ describe('public API security boundaries', () => {
     const auth = readFileSync('src/server/services/fleetAuth.ts', 'utf8');
     expect(app).toContain("app.use('/api/neon', requireFleetAdmin)");
     expect(app).toContain("app.use('/api/drizzle', requireFleetAdmin)");
-    expect(auth).toContain("requireFleetRole(req, allowedRoles");
+    expect(auth).toContain('export async function requireFleetRole');
+    expect(auth).toContain('allowedRoles.includes(role)');
     expect(app).toContain("requireFleetRole(req, ['owner', 'admin'])");
   });
 });
