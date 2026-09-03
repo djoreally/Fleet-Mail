@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { requireFleetOrganization } from './fleetAuth.js';
-import { resolveAgentRuntimeOrganization, searchAgentRuntimeContext } from './agentRuntimeSearch.js';
+import { searchAgentRuntimeContext } from './agentRuntimeSearch.js';
 import { searchAgentOperationalContext } from './agentRuntimeOperations.js';
 import { planAgentTools } from './agentToolRouter.js';
 import { maintenanceIntelligenceService } from './maintenanceIntelligence.js';
@@ -37,13 +37,6 @@ function latestUserMessageIndex(messages: unknown[]) {
   return -1;
 }
 
-async function resolveOrganization(req: Request) {
-  if (req.header('authorization')?.startsWith('Bearer ')) {
-    return requireFleetOrganization(req);
-  }
-  return resolveAgentRuntimeOrganization(String(req.body?.contextInbox || ''));
-}
-
 export async function fleetAgentRuntimeMiddleware(req: Request, res: Response, next: NextFunction) {
   if (req.method !== 'POST') return next();
 
@@ -58,9 +51,7 @@ export async function fleetAgentRuntimeMiddleware(req: Request, res: Response, n
 
     if (!toolPlan.readTools.length) return next();
 
-    const organizationId = await resolveOrganization(req);
-    if (!organizationId) return next();
-
+    const organizationId = await requireFleetOrganization(req);
     const wantsFinancialDashboard = toolPlan.readTools.some((tool) => ['financials.search', 'financials.summary', 'invoices.search', 'payments.search'].includes(tool));
     const [coreRuntime, operations, maintenance, financials] = await Promise.all([
       searchAgentRuntimeContext(organizationId, latestUserText),
@@ -85,7 +76,7 @@ export async function fleetAgentRuntimeMiddleware(req: Request, res: Response, n
     ];
   } catch (error) {
     console.warn('Fleet agent runtime unavailable:', error instanceof Error ? error.message : error);
-    if (req.header('authorization')?.startsWith('Bearer ')) return res.status(401).json({ error: 'Valid Fleet organization access is required' });
+    return res.status(401).json({ error: 'Valid Fleet organization access is required' });
   }
 
   return next();
