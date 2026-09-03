@@ -6,11 +6,12 @@ describe('agent runtime Fleet search contract',()=>{
     const service=readFileSync('src/server/services/agentRuntimeSearch.ts','utf8');
     for(const term of ['prospectContacts','fleetAccounts','vehicles','workOrders','maintenance','client.inboxes.messages.list']) expect(service).toContain(term);
   });
-  it('grounds chat with organization-scoped runtime results before the latest user request',()=>{
+  it('grounds chat only after verified organization access',()=>{
     const app=readFileSync('src/server/app.ts','utf8');
     const runtime=readFileSync('src/server/services/fleetAgentRuntime.ts','utf8');
-    expect(app).toContain("app.use('/api/chat'");
-    expect(runtime).toContain('resolveAgentRuntimeOrganization');
+    expect(app).toContain("app.use('/api/chat', requireFleetSession)");
+    expect(runtime).toContain('requireFleetOrganization(req)');
+    expect(runtime).not.toContain('resolveAgentRuntimeOrganization');
     expect(runtime).toContain('searchAgentRuntimeContext');
     expect(runtime).toContain('Trusted Fleet OS tool results');
   });
