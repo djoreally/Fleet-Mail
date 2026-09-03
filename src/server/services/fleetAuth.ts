@@ -43,6 +43,9 @@ function verifiedBearerClaims(authorization: string) {
 }
 
 export async function requireFleetOrganization(req: Request): Promise<string> {
+  const cachedOrganizationId = (req as Request & { fleetOrganizationId?: string }).fleetOrganizationId;
+  if (cachedOrganizationId) return cachedOrganizationId;
+
   const authorization = req.header('authorization');
   if (!authorization?.startsWith('Bearer ')) throw new FleetAuthError(401, 'Authentication required');
 
@@ -78,7 +81,9 @@ export async function requireFleetOrganization(req: Request): Promise<string> {
   }
 
   if (requested && !memberships.some((item) => item.organizationId === requested)) throw new FleetAuthError(403, 'You do not have access to this organization');
-  return requested || memberships[0].organizationId;
+  const organizationId = requested || memberships[0].organizationId;
+  (req as Request & { fleetOrganizationId?: string }).fleetOrganizationId = organizationId;
+  return organizationId;
 }
 
 export function fleetAuthFailure(res: any, error: unknown) {
