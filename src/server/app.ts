@@ -18,6 +18,7 @@ import { prospectWebhookService, verifyAgentMailWebhook } from './services/prosp
 import { fleetAgentRuntimeMiddleware } from './services/fleetAgentRuntime.js';
 import { chatAttachmentExtractionMiddleware } from './services/chatAttachmentExtraction.js';
 import { fleetAuthFailure, requireFleetOrganization } from './services/fleetAuth.js';
+import { enforceAgentMailInboxScope, resolveOrganizationAgentMailInbox } from './services/agentMailTenantBoundary.js';
 import { serverConfig } from './config.js';
 
 async function requireFleetSession(req: Request, res: Response, next: NextFunction) {
@@ -51,21 +52,29 @@ export function createApp() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
-  // Public health/configuration contract. Never disclose internal service URLs,
-  // provider model identifiers, or credentials through the unauthenticated status route.
-  app.get('/api/status', (_req, res) => {
+  // Public health contract exposes only provider readiness. Authenticated app
+  // sessions additionally receive their own organization-scoped active inbox.
+  app.get('/api/status', async (req, res) => {
     const atlasKey = process.env.ATLASCLOUD_API_KEY;
     const agentKey = process.env.AGENTMAIL_API_KEY;
-    return res.json({
+    const status: Record<string, unknown> = {
       atlasCloudConfigured: Boolean(atlasKey && atlasKey !== 'your-atlascloud-api-key' && atlasKey.trim() !== ''),
       agentMailConfigured: Boolean(agentKey && agentKey !== 'your-agentmail-api-key' && agentKey.trim() !== ''),
       neonConfigured: Boolean(serverConfig.neonDataApiUrl && serverConfig.neonAuthUrl),
       googleConfigured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_TOKEN_ENCRYPTION_KEY),
       firecrawlConfigured: Boolean(process.env.FIRECRAWL_API_KEY?.trim()),
       browserbaseConfigured: Boolean(process.env.BROWSERBASE_API_KEY?.trim()),
-      defaultInbox: serverConfig.defaultInbox,
-      activeInbox: serverConfig.defaultInbox,
-    });
+    };
+    if (req.header('authorization')?.startsWith('Bearer ')) {
+      try {
+        const activeInbox = await resolveOrganizationAgentMailInbox(req);
+        status.defaultInbox = activeInbox;
+        status.activeInbox = activeInbox;
+      } catch {
+        // Health status remains available even when the current session has no inbox yet.
+      }
+    }
+    return res.json(status);
   });
 
   // AI and communications surfaces can expose tenant data or cause external side
@@ -75,6 +84,7 @@ export function createApp() {
   app.use('/api/generate-draft', requireFleetSession);
   app.use('/api/summarize-email', requireFleetSession);
   app.use('/api/agentmail', requireFleetSession);
+  app.use('/api/agentmail', enforceAgentMailInboxScope);
 
   app.use('/api/chat', chatAttachmentExtractionMiddleware);
   app.use('/api/chat', fleetAgentRuntimeMiddleware);
