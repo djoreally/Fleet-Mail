@@ -19,11 +19,11 @@ export const AGENT_SKILLS: AgentSkill[] = [
   { id: 'follow-ups', name: 'Follow-up Planning', category: 'Execution', description: 'Drafts follow-up plans and due dates; durable autonomous delivery remains confirmation-gated.', status: 'guarded', confirmationRequired: true },
   { id: 'bulk-drafting', name: 'Bulk Personalized Drafting', category: 'Execution', description: 'Creates personalized drafts while keeping every outbound batch reviewable.', status: 'guarded', confirmationRequired: true },
   { id: 'inbox-search', name: 'Inbox & Contact Search', category: 'Information', description: 'Searches connected mail and resolves contacts using address plus conversation context.', status: 'connected' },
-  { id: 'website-crawl', name: 'Firecrawl Website Research', category: 'Information', description: 'Primary web research tool for searching and crawling supplied public websites and grounding answers in readable page content.', status: process.env.FIRECRAWL_API_KEY ? 'connected' : 'guarded' },
-  { id: 'browser-access', name: 'Browserbase Browser Actions', category: 'Execution', description: 'Reserved for explicit live-browser tasks such as navigation, clicking, form entry, authenticated workflows, and future reorder actions.', status: process.env.BROWSERBASE_API_KEY ? 'connected' : 'guarded', confirmationRequired: true },
+  { id: 'website-crawl', name: 'Web Research', category: 'Information', description: 'Searches and reads public websites for grounded research without exposing provider internals to the agent.', status: process.env.FIRECRAWL_API_KEY ? 'connected' : 'guarded' },
+  { id: 'browser-access', name: 'Interactive Browser', category: 'Execution', description: 'Handles explicit browser navigation and form preparation. Consequential submission remains confirmation-gated.', status: process.env.BROWSERBASE_API_KEY ? 'connected' : 'guarded', confirmationRequired: true },
   { id: 'fleet-context', name: 'Fleet Operations Context', category: 'Information', description: 'Uses vehicles, work orders, maintenance, dispatch, and invoice context when supplied.', status: 'active' },
   { id: 'pii-redaction', name: 'Sensitive Data Redaction', category: 'Trust & Safety', description: 'Redacts SSNs, payment-card patterns, and secrets before model processing.', status: 'active' },
-  { id: 'sentinel', name: 'Sentinel Confirmation', category: 'Trust & Safety', description: 'Requires explicit confirmation for sends, replies, forwards, deletes, and calendar writes.', status: 'active', confirmationRequired: true },
+  { id: 'sentinel', name: 'Sentinel Confirmation', category: 'Trust & Safety', description: 'Requires explicit confirmation for sends, replies, forwards, deletes, calendar writes, and browser submissions.', status: 'active', confirmationRequired: true },
 ];
 
 export function redactSensitiveData(value: string) {
@@ -42,6 +42,9 @@ export function redactObject(value: unknown): unknown {
 
 export function formatAgentPlainText(value: string) {
   return value
+    .replace(/<dots_function_call[\s\S]*?<\/dots_function_call>/gi, '')
+    .replace(/<invoke[\s\S]*?<\/invoke>/gi, '')
+    .replace(/<\/?(?:dots_function_call|invoke)[^>]*>/gi, '')
     .replace(/```json:(?:email_draft|agent_action)[\s\S]*?```/gi, '')
     .replace(/```[a-z]*\s*([\s\S]*?)```/gi, '$1')
     .replace(/^\s{0,3}#{1,6}\s+/gm, '')
