@@ -15,6 +15,7 @@ import { workOrderExecutionRouter } from './routes/workOrderExecution.js';
 import { workOrderCompletionRouter } from './routes/workOrderCompletion.js';
 import { maintenanceIntelligenceRouter } from './routes/maintenanceIntelligence.js';
 import { prospectingRouter } from './routes/prospecting.js';
+import { technicianRouter } from './routes/technician.js';
 import { tenantChatRouter } from './routes/chat.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { teamRouter } from './routes/team.js';
@@ -28,56 +29,41 @@ import { serverConfig } from './config.js';
 async function requireFleetSession(req: Request, res: Response, next: NextFunction) {
   try { await requireFleetOrganization(req); return next(); } catch (error) { return fleetAuthFailure(res, error); }
 }
-
 async function requireFleetAdmin(req: Request, res: Response, next: NextFunction) {
   try { await requireFleetPermission(req, 'infrastructure.manage'); return next(); } catch (error) { return fleetAuthFailure(res, error); }
 }
 
 export function createApp() {
   const app = express();
-
   app.post('/api/webhooks/agentmail', express.raw({ type: 'application/json', limit: '1mb' }), async (req, res) => {
     const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
     const secret = process.env.AGENTMAIL_WEBHOOK_SECRET?.trim() || '';
     if (!secret || !verifyAgentMailWebhook(raw, req.headers as Record<string, unknown>, secret)) return res.status(401).json({ error: 'invalid_signature' });
-    try {
-      const payload = JSON.parse(raw.toString('utf8'));
-      const result = await prospectWebhookService.handle(payload);
-      return res.status(200).json({ accepted: true, ...result });
-    } catch (error) {
-      console.error('AgentMail webhook processing failed', error instanceof Error ? error.message : error);
-      return res.status(500).json({ error: 'webhook_processing_failed' });
-    }
+    try { const payload = JSON.parse(raw.toString('utf8')); const result = await prospectWebhookService.handle(payload); return res.status(200).json({ accepted: true, ...result }); }
+    catch (error) { console.error('AgentMail webhook processing failed', error instanceof Error ? error.message : error); return res.status(500).json({ error: 'webhook_processing_failed' }); }
   });
-
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
   app.get('/api/status', async (req, res) => {
-    const atlasKey = process.env.ATLASCLOUD_API_KEY;
-    const agentKey = process.env.AGENTMAIL_API_KEY;
+    const atlasKey = process.env.ATLASCLOUD_API_KEY; const agentKey = process.env.AGENTMAIL_API_KEY;
     const status: Record<string, unknown> = {
       atlasCloudConfigured: Boolean(atlasKey && atlasKey !== 'your-atlascloud-api-key' && atlasKey.trim() !== ''),
       agentMailConfigured: Boolean(agentKey && agentKey !== 'your-agentmail-api-key' && agentKey.trim() !== ''),
       neonConfigured: Boolean(serverConfig.neonDataApiUrl && serverConfig.neonAuthUrl),
       googleConfigured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_TOKEN_ENCRYPTION_KEY),
-      firecrawlConfigured: Boolean(process.env.FIRECRAWL_API_KEY?.trim()),
-      browserbaseConfigured: Boolean(process.env.BROWSERBASE_API_KEY?.trim()),
+      firecrawlConfigured: Boolean(process.env.FIRECRAWL_API_KEY?.trim()), browserbaseConfigured: Boolean(process.env.BROWSERBASE_API_KEY?.trim()),
     };
-    if (req.header('authorization')?.startsWith('Bearer ')) {
-      try { const activeInbox = await resolveOrganizationAgentMailInbox(req); status.defaultInbox = activeInbox; status.activeInbox = activeInbox; } catch {}
-    }
+    if (req.header('authorization')?.startsWith('Bearer ')) { try { const activeInbox = await resolveOrganizationAgentMailInbox(req); status.defaultInbox = activeInbox; status.activeInbox = activeInbox; } catch {} }
     return res.json(status);
   });
-
-  app.get('/api/access', requireFleetSession, async (req, res) => {
-    try { return res.json(await getFleetAccessContext(req)); } catch (error) { return fleetAuthFailure(res, error); }
-  });
+  app.get('/api/access', requireFleetSession, async (req, res) => { try { return res.json(await getFleetAccessContext(req)); } catch (error) { return fleetAuthFailure(res, error); } });
 
   app.use('/api/vehicles', requireFleetSession);
   app.use('/api/contacts', requireFleetSession);
   app.use('/api/agent', requireFleetSession);
   app.use('/api/team', requireFleetSession);
+  app.use('/api/technician', requireFleetSession);
   app.use('/api/neon', requireFleetAdmin);
   app.use('/api/drizzle', requireFleetAdmin);
   app.use('/api/chat', requireFleetSession);
@@ -91,13 +77,13 @@ export function createApp() {
   app.use('/api/chat', chatAttachmentExtractionMiddleware);
   app.use('/api/chat', fleetAgentRuntimeMiddleware);
   app.use('/api/chat', tenantChatRouter);
-
   app.use('/api', dashboardRouter);
   app.use('/api', agentMailAttachmentsRouter);
   app.use('/api', apiRouter);
   app.use('/api', vehicle360Router);
   app.use('/api/google', googleRouter);
   app.use('/api/team', teamRouter);
+  app.use('/api/technician', technicianRouter);
   app.use('/api/agentmail/crud', agentmailCrudRouter);
   app.use('/api/agent/actions', agentActionsRouter);
   app.use('/api/operations', operationsRouter);

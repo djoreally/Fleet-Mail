@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { completeMaintenance, createMaintenanceSchedule, createWorkOrder, deleteWorkOrder, listMaintenance, listWorkOrders, updateWorkOrder } from '../services/operationsPersistence.js';
 import { getTechnicianWorkOrderContext } from '../services/technicianContext.js';
 import { FleetAuthError, fleetAuthFailure, requireFleetOrganization, requireFleetPermission } from '../services/fleetAuth.js';
+import { assertAssignedWorkOrder, getTechnicianScope } from '../services/technicianAccess.js';
 
 export const operationsRouter = Router();
 
@@ -13,11 +14,17 @@ function failure(res: Parameters<typeof fleetAuthFailure>[0], error: unknown) {
 }
 
 operationsRouter.get('/work-orders', async (req, res) => {
-  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.view'); res.json({ organizationId, workOrders: await listWorkOrders(organizationId) }); }
-  catch (error) { failure(res, error); }
+  try {
+    const organizationId = await requireFleetOrganization(req);
+    await requireFleetPermission(req, 'work_orders.view');
+    const scope = await getTechnicianScope(req, organizationId);
+    const rows = await listWorkOrders(organizationId);
+    const workOrders = scope.isTechnician ? rows.filter(row => row.technicianId === scope.technicianId) : rows;
+    res.json({ organizationId, workOrders });
+  } catch (error) { failure(res, error); }
 });
 operationsRouter.get('/work-orders/:id/technician-context', async (req, res) => {
-  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.view'); res.json(await getTechnicianWorkOrderContext(organizationId, req.params.id)); }
+  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.view'); await assertAssignedWorkOrder(req, organizationId, req.params.id); res.json(await getTechnicianWorkOrderContext(organizationId, req.params.id)); }
   catch (error) { failure(res, error); }
 });
 operationsRouter.post('/work-orders', async (req, res) => {
@@ -33,7 +40,7 @@ operationsRouter.delete('/work-orders/:id', async (req, res) => {
   catch (error) { failure(res, error); }
 });
 operationsRouter.get('/maintenance', async (req, res) => {
-  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.view'); res.json({ organizationId, schedules: await listMaintenance(organizationId) }); }
+  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.view'); const scope=await getTechnicianScope(req,organizationId); const schedules=await listMaintenance(organizationId); res.json({ organizationId, schedules: scope.isTechnician ? [] : schedules }); }
   catch (error) { failure(res, error); }
 });
 operationsRouter.post('/maintenance', async (req, res) => {
@@ -41,6 +48,6 @@ operationsRouter.post('/maintenance', async (req, res) => {
   catch (error) { failure(res, error); }
 });
 operationsRouter.post('/maintenance/:id/complete', async (req, res) => {
-  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.execute'); res.status(201).json({ event: await completeMaintenance(organizationId, req.params.id, req.body ?? {}) }); }
+  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.execute'); if(req.body?.workOrderId) await assertAssignedWorkOrder(req,organizationId,String(req.body.workOrderId)); res.status(201).json({ event: await completeMaintenance(organizationId, req.params.id, req.body ?? {}) }); }
   catch (error) { failure(res, error); }
 });

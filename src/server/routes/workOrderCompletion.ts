@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { FleetAuthError, fleetAuthFailure, requireFleetOrganization } from '../services/fleetAuth.js';
+import { FleetAuthError, fleetAuthFailure, requireFleetOrganization, requireFleetPermission } from '../services/fleetAuth.js';
+import { assertAssignedWorkOrder } from '../services/technicianAccess.js';
 import { workOrderCompletionService } from '../services/workOrderCompletion.js';
 
 export const workOrderCompletionRouter = Router();
@@ -7,6 +8,8 @@ export const workOrderCompletionRouter = Router();
 const complete = async (req: any, res: any) => {
   try {
     const organizationId = await requireFleetOrganization(req);
+    await requireFleetPermission(req, 'work_orders.execute');
+    await assertAssignedWorkOrder(req, organizationId, req.params.id);
     return res.json({ workOrder: await workOrderCompletionService.complete(organizationId, req.params.id) });
   } catch (error) {
     if (error instanceof FleetAuthError) return fleetAuthFailure(res, error);
