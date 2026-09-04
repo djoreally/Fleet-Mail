@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { DocumentExtractionError, extractDocumentText, supportedBinaryDocumentTypes } from './documentTextExtraction.js';
+import { extractImageTextAndEntities, formatImageScanForAgent } from './imageOcr.js';
 
 const MAX_ATTACHMENTS = 4;
 const MAX_TOTAL_BYTES = 3_000_000;
@@ -28,13 +29,19 @@ export async function chatAttachmentExtractionMiddleware(req: Request, res: Resp
     for (const raw of rawAttachments) {
       const file = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
       const type = String(file.type || '').toLowerCase();
-      if (file.kind === 'document' && supportedBinaryDocumentTypes.has(type) && !String(file.text || '').trim()) {
+      const dataUrl = String(file.dataUrl || '');
+      if (file.kind === 'image' && dataUrl) {
+        try {
+          const scan = await extractImageTextAndEntities(dataUrl, String(file.name || 'camera-scan.jpg'));
+          normalized.push({ ...file, text: formatImageScanForAgent(scan), ocr: scan, extracted: true });
+        } catch (error) {
+          normalized.push({ ...file, text: '', extracted: false, extractionError: error instanceof Error ? error.message : 'OCR failed' });
+        }
+      } else if (file.kind === 'document' && supportedBinaryDocumentTypes.has(type) && !String(file.text || '').trim()) {
         try {
           const extracted = await extractDocumentText(file);
           normalized.push({ ...file, text: extracted.text, dataUrl: undefined, extracted: true });
         } catch (error) {
-          // An image-only/empty document should not prevent valid text or other attachments
-          // in the same message from reaching the agent.
           if (error instanceof DocumentExtractionError && error.status === 422) {
             normalized.push({ ...file, text: '', dataUrl: undefined, extracted: false, extractionError: error.message });
           } else {
@@ -49,6 +56,6 @@ export async function chatAttachmentExtractionMiddleware(req: Request, res: Resp
     return next();
   } catch (error) {
     const status = error instanceof DocumentExtractionError ? error.status : 422;
-    return res.status(status).json({ error: error instanceof Error ? error.message : 'Document extraction failed' });
+    return res.status(status).json({ error: error instanceof Error ? error.message : 'Attachment extraction failed' });
   }
 }
