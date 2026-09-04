@@ -21,8 +21,10 @@ describe('chat document attachment contract', () => {
     const router = readFileSync('src/server/services/webCapabilityRouter.ts', 'utf8');
     const runtime = readFileSync('src/server/services/fleetAgentRuntime.ts', 'utf8');
     expect(browser).toContain('fetchWithBrowserbaseDirect');
-    expect(browser).toContain('searchWebWithBrowserbase');
-    expect(browser).toContain('researchCompanyWithBrowserbase');
+    expect(browser).toContain('searchWithBrowserbase');
+    expect(browser).toContain('extractCompanyWithBrowserbase');
+    expect(browser).toContain('browseWithBrowserbase');
+    expect(browser).toContain('prepareFormWithBrowserbase');
     expect(browser).toContain('fillFormWithBrowserbase');
     expect(browser).toContain('downloadDocumentWithBrowserbase');
     expect(browser).toContain('Legacy compatibility entry point');
