@@ -20,7 +20,7 @@ import { dashboardRouter } from './routes/dashboard.js';
 import { prospectWebhookService, verifyAgentMailWebhook } from './services/prospectWebhook.js';
 import { fleetAgentRuntimeMiddleware } from './services/fleetAgentRuntime.js';
 import { chatAttachmentExtractionMiddleware } from './services/chatAttachmentExtraction.js';
-import { fleetAuthFailure, requireFleetOrganization, requireFleetRole } from './services/fleetAuth.js';
+import { fleetAuthFailure, getFleetAccessContext, requireFleetOrganization, requireFleetPermission } from './services/fleetAuth.js';
 import { enforceAgentMailInboxScope, resolveOrganizationAgentMailInbox } from './services/agentMailTenantBoundary.js';
 import { serverConfig } from './config.js';
 
@@ -35,7 +35,7 @@ async function requireFleetSession(req: Request, res: Response, next: NextFuncti
 
 async function requireFleetAdmin(req: Request, res: Response, next: NextFunction) {
   try {
-    await requireFleetRole(req, ['owner', 'admin']);
+    await requireFleetPermission(req, 'infrastructure.manage');
     return next();
   } catch (error) {
     return fleetAuthFailure(res, error);
@@ -85,6 +85,14 @@ export function createApp() {
       }
     }
     return res.json(status);
+  });
+
+  app.get('/api/access', requireFleetSession, async (req, res) => {
+    try {
+      return res.json(await getFleetAccessContext(req));
+    } catch (error) {
+      return fleetAuthFailure(res, error);
+    }
   });
 
   app.use('/api/vehicles', requireFleetSession);

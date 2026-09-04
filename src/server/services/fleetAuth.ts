@@ -4,12 +4,18 @@ import type { Request } from 'express';
 import { getDb } from '../../db/index.js';
 import { organizationMemberships, organizations, users } from '../../db/drizzleSchema.js';
 import { serverConfig } from '../config.js';
+import { fleetRoleHasPermission, normalizeFleetRole, permissionsForRole, type FleetPermission, type FleetRole } from './rbac.js';
 
 export class FleetAuthError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-type FleetRequest = Request & { fleetOrganizationId?: string; fleetMembershipRole?: string };
+type FleetRequest = Request & {
+  fleetOrganizationId?: string;
+  fleetMembershipRole?: FleetRole;
+  fleetUserId?: string;
+  fleetAuthSubject?: string;
+};
 
 function database() {
   const value = getDb();
@@ -83,15 +89,38 @@ export async function requireFleetOrganization(req: Request): Promise<string> {
   const selected = requested ? memberships.find((item) => item.organizationId === requested) : memberships[0];
   if (!selected) throw new FleetAuthError(403, 'You do not have access to this organization');
   fleetReq.fleetOrganizationId = selected.organizationId;
-  fleetReq.fleetMembershipRole = selected.role;
+  fleetReq.fleetMembershipRole = normalizeFleetRole(selected.role);
+  fleetReq.fleetUserId = user.id;
+  fleetReq.fleetAuthSubject = subject;
   return selected.organizationId;
 }
 
-export async function requireFleetRole(req: Request, allowedRoles: string[]) {
+export async function requireFleetRole(req: Request, allowedRoles: FleetRole[]) {
   await requireFleetOrganization(req);
-  const role = String((req as FleetRequest).fleetMembershipRole || '');
+  const role = normalizeFleetRole((req as FleetRequest).fleetMembershipRole);
   if (!allowedRoles.includes(role)) throw new FleetAuthError(403, 'Your organization role does not permit this operation');
   return role;
+}
+
+export async function requireFleetPermission(req: Request, permission: FleetPermission) {
+  await requireFleetOrganization(req);
+  const role = normalizeFleetRole((req as FleetRequest).fleetMembershipRole);
+  if (!fleetRoleHasPermission(role, permission)) {
+    throw new FleetAuthError(403, `Your organization role does not permit ${permission}`);
+  }
+  return role;
+}
+
+export async function getFleetAccessContext(req: Request) {
+  const organizationId = await requireFleetOrganization(req);
+  const fleetReq = req as FleetRequest;
+  const role = normalizeFleetRole(fleetReq.fleetMembershipRole);
+  return {
+    organizationId,
+    userId: fleetReq.fleetUserId || null,
+    role,
+    permissions: permissionsForRole(role),
+  };
 }
 
 export function fleetAuthFailure(res: any, error: unknown) {

@@ -11,7 +11,7 @@ describe('public API security boundaries', () => {
 
   it('keeps the public status response free of internal service locations and model identifiers', () => {
     const app = readFileSync('src/server/app.ts', 'utf8');
-    const statusBlock = app.slice(app.indexOf("app.get('/api/status'"), app.indexOf('// Legacy utility surfaces'));
+    const statusBlock = app.slice(app.indexOf("app.get('/api/status'"), app.indexOf("app.get('/api/access'"));
     expect(statusBlock).not.toContain('neonDataApiUrl:');
     expect(statusBlock).not.toContain('neonAuthUrl:');
     expect(statusBlock).not.toContain('model:');
@@ -44,14 +44,22 @@ describe('public API security boundaries', () => {
     expect(chat).not.toContain('DEFAULT_INBOX');
   });
 
-  it('requires owner or admin role for database management endpoints', () => {
+  it('protects database management endpoints with centralized RBAC permissions', () => {
     const app = readFileSync('src/server/app.ts', 'utf8');
     const auth = readFileSync('src/server/services/fleetAuth.ts', 'utf8');
+    const rbac = readFileSync('src/server/services/rbac.ts', 'utf8');
     expect(app).toContain("app.use('/api/neon', requireFleetAdmin)");
     expect(app).toContain("app.use('/api/drizzle', requireFleetAdmin)");
-    expect(auth).toContain('export async function requireFleetRole');
-    expect(auth).toContain('allowedRoles.includes(role)');
-    expect(app).toContain("requireFleetRole(req, ['owner', 'admin'])");
+    expect(auth).toContain('export async function requireFleetPermission');
+    expect(app).toContain("requireFleetPermission(req, 'infrastructure.manage')");
+    expect(rbac).toContain("'infrastructure.manage'");
+  });
+
+  it('exposes authenticated access context for role-aware clients without replacing server authorization', () => {
+    const app = readFileSync('src/server/app.ts', 'utf8');
+    const auth = readFileSync('src/server/services/fleetAuth.ts', 'utf8');
+    expect(app).toContain("app.get('/api/access', requireFleetSession");
+    expect(auth).toContain('permissionsForRole(role)');
   });
 
   it('sends confirmed AI email only through the authenticated organization inbox', () => {
