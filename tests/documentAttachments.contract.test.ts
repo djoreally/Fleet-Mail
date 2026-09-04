@@ -16,14 +16,18 @@ describe('chat document attachment contract', () => {
     expect(app.indexOf('chatAttachmentExtractionMiddleware')).toBeLessThan(app.lastIndexOf('fleetAgentRuntimeMiddleware'));
   });
 
-  it('keeps Browserbase explicit and Firecrawl as the research compatibility path', () => {
+  it('keeps Browserbase as the primary web capability platform with Firecrawl fallback compatibility', () => {
     const browser = readFileSync('src/server/services/browserbase.ts', 'utf8');
+    const router = readFileSync('src/server/services/webCapabilityRouter.ts', 'utf8');
     const runtime = readFileSync('src/server/services/fleetAgentRuntime.ts', 'utf8');
     expect(browser).toContain('fetchWithBrowserbaseDirect');
-    expect(browser).toContain('This is intentionally NOT a research fallback');
-    expect(browser).toContain('Legacy-named compatibility entry point');
+    expect(browser).toContain('searchWebWithBrowserbase');
+    expect(browser).toContain('researchCompanyWithBrowserbase');
+    expect(browser).toContain('fillFormWithBrowserbase');
+    expect(browser).toContain('downloadDocumentWithBrowserbase');
+    expect(browser).toContain('Legacy compatibility entry point');
     expect(browser).toContain('crawler(rawUrl)');
-    expect(runtime).toContain('Browserbase is explicit-action-only');
-    expect(runtime).toContain('Firecrawl is the research tool');
+    expect(router).toContain("provider: 'browserbase'");
+    expect(runtime).toContain('Browserbase');
   });
 });
