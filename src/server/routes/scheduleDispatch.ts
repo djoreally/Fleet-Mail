@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { FleetOperationsError, ScheduleDispatchService } from '../services/scheduleDispatch.js';
-import { fleetAuthFailure, requireFleetOrganization } from '../services/fleetAuth.js';
+import { fleetAuthFailure, requireFleetOrganization, requireFleetPermission } from '../services/fleetAuth.js';
 
 export const scheduleDispatchRouter = Router();
 const service = new ScheduleDispatchService();
@@ -21,40 +21,49 @@ const run = (handler: (req: Request) => Promise<unknown>, created = false) => as
 };
 
 scheduleDispatchRouter.get('/appointments', run(async (req) => {
+  await requireFleetPermission(req, 'schedule.view');
   const c = await context(req);
   return service.listAppointments(c.organizationId, c.authorization, req.query.from, req.query.to);
 }));
 scheduleDispatchRouter.post('/appointments', run(async (req) => {
+  await requireFleetPermission(req, 'schedule.manage');
   const c = await context(req);
   return service.createAppointment(c.organizationId, c.authorization, req.body ?? {});
 }, true));
 scheduleDispatchRouter.patch('/appointments/:id', run(async (req) => {
+  await requireFleetPermission(req, 'schedule.manage');
   const c = await context(req);
   return service.updateAppointment(c.organizationId, c.authorization, req.params.id, req.body ?? {});
 }));
 scheduleDispatchRouter.delete('/appointments/:id', run(async (req) => {
+  await requireFleetPermission(req, 'schedule.manage');
   const c = await context(req);
   return service.deleteAppointment(c.organizationId, c.authorization, req.params.id);
 }));
 
 scheduleDispatchRouter.get('/dispatch', run(async (req) => {
+  await requireFleetPermission(req, 'dispatch.view');
   const c = await context(req);
   return service.listDispatch(c.organizationId, c.authorization);
 }));
 scheduleDispatchRouter.post('/dispatch', run(async (req) => {
+  await requireFleetPermission(req, 'dispatch.manage');
   const c = await context(req);
   return service.createDispatch(c.organizationId, c.authorization, req.body ?? {});
 }, true));
 scheduleDispatchRouter.patch('/dispatch/:id', run(async (req) => {
+  await requireFleetPermission(req, 'dispatch.manage');
   const c = await context(req);
   return service.updateDispatch(c.organizationId, c.authorization, req.params.id, req.body ?? {});
 }));
 scheduleDispatchRouter.delete('/dispatch/:id', run(async (req) => {
+  await requireFleetPermission(req, 'dispatch.manage');
   const c = await context(req);
   return service.deleteDispatch(c.organizationId, c.authorization, req.params.id);
 }));
 
 scheduleDispatchRouter.get('/references', run(async (req) => {
+  await requireFleetPermission(req, 'dispatch.view');
   const c = await context(req);
   return service.references(c.organizationId, c.authorization);
 }));

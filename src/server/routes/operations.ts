@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { completeMaintenance, createMaintenanceSchedule, createWorkOrder, deleteWorkOrder, listMaintenance, listWorkOrders, updateWorkOrder } from '../services/operationsPersistence.js';
 import { getTechnicianWorkOrderContext } from '../services/technicianContext.js';
-import { FleetAuthError, fleetAuthFailure, requireFleetOrganization } from '../services/fleetAuth.js';
+import { FleetAuthError, fleetAuthFailure, requireFleetOrganization, requireFleetPermission } from '../services/fleetAuth.js';
 
 export const operationsRouter = Router();
 
@@ -13,34 +13,34 @@ function failure(res: Parameters<typeof fleetAuthFailure>[0], error: unknown) {
 }
 
 operationsRouter.get('/work-orders', async (req, res) => {
-  try { const organizationId = await requireFleetOrganization(req); res.json({ organizationId, workOrders: await listWorkOrders(organizationId) }); }
+  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.view'); res.json({ organizationId, workOrders: await listWorkOrders(organizationId) }); }
   catch (error) { failure(res, error); }
 });
 operationsRouter.get('/work-orders/:id/technician-context', async (req, res) => {
-  try { const organizationId = await requireFleetOrganization(req); res.json(await getTechnicianWorkOrderContext(organizationId, req.params.id)); }
+  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.view'); res.json(await getTechnicianWorkOrderContext(organizationId, req.params.id)); }
   catch (error) { failure(res, error); }
 });
 operationsRouter.post('/work-orders', async (req, res) => {
-  try { const organizationId = await requireFleetOrganization(req); res.status(201).json({ workOrder: await createWorkOrder(organizationId, req.body ?? {}) }); }
+  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.manage'); res.status(201).json({ workOrder: await createWorkOrder(organizationId, req.body ?? {}) }); }
   catch (error) { failure(res, error); }
 });
 operationsRouter.patch('/work-orders/:id', async (req, res) => {
-  try { const organizationId = await requireFleetOrganization(req); res.json({ workOrder: await updateWorkOrder(organizationId, req.params.id, req.body ?? {}) }); }
+  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.manage'); res.json({ workOrder: await updateWorkOrder(organizationId, req.params.id, req.body ?? {}) }); }
   catch (error) { failure(res, error); }
 });
 operationsRouter.delete('/work-orders/:id', async (req, res) => {
-  try { const organizationId = await requireFleetOrganization(req); res.json({ deleted: await deleteWorkOrder(organizationId, req.params.id) }); }
+  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.manage'); res.json({ deleted: await deleteWorkOrder(organizationId, req.params.id) }); }
   catch (error) { failure(res, error); }
 });
 operationsRouter.get('/maintenance', async (req, res) => {
-  try { const organizationId = await requireFleetOrganization(req); res.json({ organizationId, schedules: await listMaintenance(organizationId) }); }
+  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.view'); res.json({ organizationId, schedules: await listMaintenance(organizationId) }); }
   catch (error) { failure(res, error); }
 });
 operationsRouter.post('/maintenance', async (req, res) => {
-  try { const organizationId = await requireFleetOrganization(req); res.status(201).json({ schedule: await createMaintenanceSchedule(organizationId, req.body ?? {}) }); }
+  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.manage'); res.status(201).json({ schedule: await createMaintenanceSchedule(organizationId, req.body ?? {}) }); }
   catch (error) { failure(res, error); }
 });
 operationsRouter.post('/maintenance/:id/complete', async (req, res) => {
-  try { const organizationId = await requireFleetOrganization(req); res.status(201).json({ event: await completeMaintenance(organizationId, req.params.id, req.body ?? {}) }); }
+  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.execute'); res.status(201).json({ event: await completeMaintenance(organizationId, req.params.id, req.body ?? {}) }); }
   catch (error) { failure(res, error); }
 });

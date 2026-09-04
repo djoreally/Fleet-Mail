@@ -3,7 +3,7 @@ import { getAgentMailClient } from '../services/agentmail.js';
 import { createAgentActionProposal, verifyAgentActionProposal } from '../services/agentActions.js';
 import { googleFetch } from '../services/googleOAuth.js';
 import { readGoogleTokens, writeGoogleTokens } from './google.js';
-import { FleetAuthError, fleetAuthFailure, requireFleetOrganization } from '../services/fleetAuth.js';
+import { FleetAuthError, fleetAuthFailure, requireFleetOrganization, requireFleetPermission } from '../services/fleetAuth.js';
 import { resolveOrganizationAgentMailInbox } from '../services/agentMailTenantBoundary.js';
 import { createWorkOrder } from '../services/operationsPersistence.js';
 import { workOrderExecutionService } from '../services/workOrderExecution.js';
@@ -23,6 +23,7 @@ agentActionsRouter.post('/execute', async (req, res) => {
   if (req.body?.confirmed !== true) return res.status(409).json({ error: 'Explicit confirmation is required' });
   let proposalId: string | null = null;
   try {
+    await requireFleetPermission(req, 'agent.execute');
     const proposal = verifyAgentActionProposal(req.body?.confirmationToken);
     proposalId = proposal.id;
     if (consumedProposals.has(proposal.id)) return res.status(409).json({ error: 'This action was already executed' });
@@ -31,6 +32,7 @@ agentActionsRouter.post('/execute', async (req, res) => {
     const organizationId = await requireFleetOrganization(req);
 
     if (proposal.kind === 'email.send') {
+      await requireFleetPermission(req, 'inbox.send');
       const prospectId = proposal.payload.prospectId ? String(proposal.payload.prospectId) : null;
       if (prospectId) await prospectingService.get(organizationId, prospectId);
       const client = getAgentMailClient() as any;
@@ -49,6 +51,7 @@ agentActionsRouter.post('/execute', async (req, res) => {
     }
 
     if (proposal.kind === 'calendar.create') {
+      await requireFleetPermission(req, 'schedule.manage');
       const tokens = readGoogleTokens(req);
       if (!tokens) return res.status(401).json({ error: 'Connect Google before creating calendar events' });
       const result = await googleFetch<any>('https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all', tokens, { method: 'POST', body: JSON.stringify(proposal.payload) });
@@ -57,10 +60,12 @@ agentActionsRouter.post('/execute', async (req, res) => {
     }
 
     if (proposal.kind === 'fleet.work_order.create') {
+      await requireFleetPermission(req, 'work_orders.manage');
       const result = await createWorkOrder(organizationId, proposal.payload);
       return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result });
     }
     if (proposal.kind === 'fleet.work_order.transition') {
+      await requireFleetPermission(req, 'work_orders.manage');
       const status = String(proposal.payload.status);
       const result = ['complete', 'completed'].includes(status)
         ? await workOrderCompletionService.complete(organizationId, String(proposal.payload.workOrderId))
@@ -68,11 +73,13 @@ agentActionsRouter.post('/execute', async (req, res) => {
       return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result });
     }
     if (proposal.kind === 'fleet.authorization.decision') {
+      await requireFleetPermission(req, 'authorizations.manage');
       const decision = String(proposal.payload.decision) as 'authorized' | 'rejected';
       const result = await workOrderExecutionService.decideAuthorization(organizationId, String(proposal.payload.authorizationId), decision, proposal.payload);
       return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result });
     }
     if (proposal.kind === 'fleet.prospect.convert') {
+      await requireFleetPermission(req, 'prospects.manage');
       const result = await prospectingService.convertToFleetAccount(organizationId, String(proposal.payload.prospectId));
       return res.json({ executed: true, proposalId: proposal.id, kind: proposal.kind, result });
     }
