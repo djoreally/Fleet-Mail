@@ -1,6 +1,4 @@
-import Browserbase from '@browserbasehq/sdk';
 import { browserbase, Stagehand } from '@browserbasehq/stagehand';
-import AdmZip from 'adm-zip';
 import { z } from 'zod/v4';
 import { crawlWebsite, validatePublicUrl } from './firecrawl.js';
 
@@ -34,6 +32,8 @@ export interface BrowserbaseSessionResult<T = unknown> {
   cacheStatus?: string;
 }
 
+const BROWSERBASE_API_BASE = 'https://api.browserbase.com/v1';
+
 const CompanySchema = z.object({
   name: z.string().default(''),
   summary: z.string().default(''),
@@ -57,8 +57,11 @@ function apiKey() {
   return value;
 }
 
-function client() {
-  return new Browserbase({ apiKey: apiKey() });
+function apiHeaders(accept?: string) {
+  return {
+    'X-BB-API-Key': apiKey(),
+    ...(accept ? { Accept: accept } : {}),
+  };
 }
 
 function proxyConfig(geo?: BrowserbaseGeo) {
@@ -101,50 +104,78 @@ async function withStagehand<T>(
   }
 }
 
-/**
- * Browserbase Search has no SDK method yet. Use the documented direct HTTP API.
- * Search returns discovery metadata only; Fetch/Stagehand are used for page content.
- */
+/** Browserbase Search REST API. */
 export async function searchWithBrowserbase(query: string, limit = 8): Promise<BrowserbaseSearchResult[]> {
   const cleaned = String(query || '').trim().slice(0, 500);
   if (!cleaned) throw new Error('A web search query is required.');
-  const response = await fetch('https://api.browserbase.com/v1/search', {
+
+  const response = await fetch(`${BROWSERBASE_API_BASE}/search`, {
     method: 'POST',
     headers: {
+      ...apiHeaders(),
       'Content-Type': 'application/json',
-      'X-BB-API-Key': apiKey(),
     },
-    body: JSON.stringify({ query: cleaned, numResults: Math.max(1, Math.min(limit, 25)) }),
+    body: JSON.stringify({
+      query: cleaned,
+      numResults: Math.max(1, Math.min(limit, 25)),
+    }),
   });
-  if (!response.ok) {
-    throw new Error(`Browserbase Search failed with HTTP ${response.status}.`);
-  }
+
+  if (!response.ok) throw new Error(`Browserbase Search failed with HTTP ${response.status}.`);
+
   const data = await response.json() as { results?: Array<Record<string, unknown>> };
   return (data.results || []).map((result) => ({
     title: String(result.title || ''),
     url: String(result.url || ''),
-    snippet: String(result.description || result.snippet || ''),
+    snippet: String(result.description || result.snippet || result.text || ''),
     author: result.author ? String(result.author) : undefined,
     publishedDate: result.publishedDate ? String(result.publishedDate) : undefined,
   })).filter((result) => result.url);
 }
 
-/** Lightweight Browserbase Fetch API path for static/non-JS pages. */
+/** Lightweight Browserbase Fetch REST API path for static/non-JS pages. */
 export async function fetchWithBrowserbaseDirect(
   rawUrl: string,
   urlValidator: typeof validatePublicUrl = validatePublicUrl,
 ): Promise<BrowserbasePage> {
   const url = await urlValidator(rawUrl);
-  const data = await client().fetchAPI.create({ url: url.href, allowRedirects: true });
-  const statusCode = Number((data as any).statusCode || 0);
-  if (statusCode >= 400) throw new Error(`Browserbase Fetch failed with HTTP ${statusCode}.`);
-  const content = typeof data.content === 'string' ? data.content.slice(0, 24_000) : JSON.stringify(data.content).slice(0, 24_000);
-  if (!content.trim()) throw new Error('Browserbase Fetch returned no readable content; use a browser session for JavaScript-rendered content.');
+  const response = await fetch(`${BROWSERBASE_API_BASE}/fetch`, {
+    method: 'POST',
+    headers: {
+      ...apiHeaders(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      url: url.href,
+      allowRedirects: true,
+      allowInsecureSsl: false,
+      proxies: false,
+    }),
+  });
+
+  if (!response.ok) throw new Error(`Browserbase Fetch failed with HTTP ${response.status}.`);
+
+  const data = await response.json() as {
+    id?: string;
+    statusCode?: number;
+    content?: unknown;
+    contentType?: string;
+  };
+  const statusCode = Number(data.statusCode || 0);
+  if (statusCode >= 400) throw new Error(`Browserbase Fetch target returned HTTP ${statusCode}.`);
+
+  const content = typeof data.content === 'string'
+    ? data.content.slice(0, 24_000)
+    : JSON.stringify(data.content ?? '').slice(0, 24_000);
+  if (!content.trim()) {
+    throw new Error('Browserbase Fetch returned no readable content; use a browser session for JavaScript-rendered content.');
+  }
+
   return {
     sourceUrl: url.href,
-    requestId: String((data as any).id || ''),
+    requestId: String(data.id || ''),
     statusCode: statusCode || 200,
-    contentType: String((data as any).contentType || 'text/html'),
+    contentType: String(data.contentType || 'text/html'),
     content,
     provider: 'browserbase',
   };
@@ -226,30 +257,53 @@ export async function fillFormWithBrowserbase(
   }, geo);
 }
 
-async function pollDownloads(sessionId: string, timeoutMs = 45_000): Promise<Buffer> {
-  const bb = client();
+type BrowserbaseDownload = {
+  id: string;
+  sessionId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+};
+
+async function pollDownloads(sessionId: string, timeoutMs = 45_000): Promise<BrowserbaseDownload> {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    const response = await bb.sessions.downloads.list(sessionId);
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.byteLength > 0) return buffer;
+    const response = await fetch(`${BROWSERBASE_API_BASE}/downloads?sessionId=${encodeURIComponent(sessionId)}`, {
+      method: 'GET',
+      headers: apiHeaders('application/json'),
+    });
+    if (!response.ok) throw new Error(`Browserbase Downloads list failed with HTTP ${response.status}.`);
+
+    const data = await response.json() as { downloads?: BrowserbaseDownload[]; total?: number };
+    const download = data.downloads?.[0];
+    if (download?.id) return download;
+
     await new Promise((resolve) => setTimeout(resolve, 1_500));
   }
   throw new Error('Browserbase download timed out.');
+}
+
+async function fetchDownloadBytes(downloadId: string): Promise<Buffer> {
+  const response = await fetch(`${BROWSERBASE_API_BASE}/downloads/${encodeURIComponent(downloadId)}`, {
+    method: 'GET',
+    headers: apiHeaders('application/octet-stream'),
+  });
+  if (!response.ok) throw new Error(`Browserbase Download fetch failed with HTTP ${response.status}.`);
+  return Buffer.from(await response.arrayBuffer());
 }
 
 export async function downloadDocumentWithBrowserbase(rawUrl: string) {
   return withStagehand(rawUrl, async (_stagehand, page, sessionId, sourceUrl) => {
     if (!sessionId) throw new Error('Browserbase did not return a session ID for the download.');
     await page.goto(sourceUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 }).catch(() => undefined);
-    const archive = await pollDownloads(sessionId);
-    const zip = new AdmZip(archive);
-    const entries = zip.getEntries().filter((entry) => !entry.isDirectory);
-    if (!entries.length) throw new Error('Browserbase returned a download archive with no files.');
-    const file = entries[0];
-    const bytes = file.getData();
+
+    const download = await pollDownloads(sessionId);
+    const bytes = await fetchDownloadBytes(download.id);
     let text = '';
-    if (file.entryName.toLowerCase().endsWith('.pdf') || bytes.subarray(0, 5).toString() === '%PDF-') {
+    const fileName = download.filename || 'download';
+    const mimeType = download.mimeType || '';
+
+    if (fileName.toLowerCase().endsWith('.pdf') || mimeType === 'application/pdf' || bytes.subarray(0, 5).toString() === '%PDF-') {
       const { PDFParse } = await import('pdf-parse');
       const parser = new PDFParse({ data: new Uint8Array(bytes) });
       try {
@@ -259,11 +313,13 @@ export async function downloadDocumentWithBrowserbase(rawUrl: string) {
         await parser.destroy();
       }
     }
+
     return {
       sourceUrl,
       sessionId,
       data: {
-        fileName: file.entryName,
+        fileName,
+        mimeType,
         byteLength: bytes.byteLength,
         text,
       },
@@ -272,8 +328,8 @@ export async function downloadDocumentWithBrowserbase(rawUrl: string) {
 }
 
 /**
- * Legacy compatibility entry point. Research should use Browserbase Search first;
- * Firecrawl remains a compatibility fallback. Fetch is for static content only.
+ * Legacy compatibility entry point. Research uses Browserbase Search/Fetch REST APIs
+ * first in the capability router; Firecrawl remains a compatibility fallback.
  */
 export async function fetchWithBrowserbase(
   rawUrl: string,

@@ -7,7 +7,7 @@ describe('chat document attachment contract', () => {
     const extraction = readFileSync('src/server/services/documentTextExtraction.ts', 'utf8');
     const middleware = readFileSync('src/server/services/chatAttachmentExtraction.ts', 'utf8');
     const app = readFileSync('src/server/app.ts', 'utf8');
-    expect(ui).toContain("type==='application/pdf'||type===DOCX");
+    expect(ui).toContain("type === 'application/pdf' || type === DOCX");
     expect(extraction).toContain("import('pdf-parse')");
     expect(extraction).toContain("import('mammoth')");
     expect(middleware).toContain('MAX_ATTACHMENTS = 4');
@@ -16,17 +16,24 @@ describe('chat document attachment contract', () => {
     expect(app.indexOf('chatAttachmentExtractionMiddleware')).toBeLessThan(app.lastIndexOf('fleetAgentRuntimeMiddleware'));
   });
 
-  it('keeps Browserbase as the primary web capability platform with Firecrawl fallback compatibility', () => {
+  it('keeps Browserbase REST APIs as the primary web capability platform with Firecrawl fallback compatibility', () => {
     const browser = readFileSync('src/server/services/browserbase.ts', 'utf8');
     const router = readFileSync('src/server/services/webCapabilityRouter.ts', 'utf8');
     const runtime = readFileSync('src/server/services/fleetAgentRuntime.ts', 'utf8');
+
+    expect(browser).toContain("const BROWSERBASE_API_BASE = 'https://api.browserbase.com/v1'");
+    expect(browser).toContain("`${BROWSERBASE_API_BASE}/search`");
+    expect(browser).toContain("`${BROWSERBASE_API_BASE}/fetch`");
+    expect(browser).toContain("`${BROWSERBASE_API_BASE}/downloads?sessionId=${encodeURIComponent(sessionId)}`");
+    expect(browser).toContain("`${BROWSERBASE_API_BASE}/downloads/${encodeURIComponent(downloadId)}`");
+    expect(browser).toContain("'X-BB-API-Key': apiKey()");
     expect(browser).toContain('fetchWithBrowserbaseDirect');
     expect(browser).toContain('searchWithBrowserbase');
     expect(browser).toContain('extractCompanyWithBrowserbase');
-    expect(browser).toContain('browseWithBrowserbase');
-    expect(browser).toContain('prepareFormWithBrowserbase');
     expect(browser).toContain('fillFormWithBrowserbase');
     expect(browser).toContain('downloadDocumentWithBrowserbase');
+    expect(browser).not.toContain('client().search.web');
+    expect(browser).not.toContain('client().fetchAPI.create');
     expect(browser).toContain('Legacy compatibility entry point');
     expect(browser).toContain('crawler(rawUrl)');
     expect(router).toContain("provider: 'browserbase'");
