@@ -9,15 +9,25 @@ describe('Browserbase production implementation contract', () => {
 
   it('pins the current Stagehand v4 runtime requirements', () => {
     expect(packageJson.dependencies['@browserbasehq/stagehand']).toBe('4.0.2');
-    expect(packageJson.dependencies['@browserbasehq/sdk']).toBeTruthy();
     expect(packageJson.dependencies.zod).toBeTruthy();
     expect(packageJson.engines.node).toBe('>=22.18.0');
   });
 
-  it('implements Browserbase Search and Fetch primitives', () => {
-    expect(browser).toContain('client().search.web');
-    expect(browser).toContain('client().fetchAPI.create');
+  it('uses Browserbase REST API endpoints for Search and Fetch', () => {
+    expect(browser).toContain("const BROWSERBASE_API_BASE = 'https://api.browserbase.com/v1'");
+    expect(browser).toContain('`${BROWSERBASE_API_BASE}/search`');
+    expect(browser).toContain('`${BROWSERBASE_API_BASE}/fetch`');
+    expect(browser).toContain("'X-BB-API-Key': apiKey()");
+    expect(browser).not.toContain('client().search.web');
+    expect(browser).not.toContain('client().fetchAPI.create');
     expect(router).toContain('searchWithBrowserbase');
+  });
+
+  it('uses Browserbase REST API endpoints for Downloads', () => {
+    expect(browser).toContain('`${BROWSERBASE_API_BASE}/downloads?sessionId=${encodeURIComponent(sessionId)}`');
+    expect(browser).toContain('`${BROWSERBASE_API_BASE}/downloads/${encodeURIComponent(downloadId)}`');
+    expect(browser).toContain("apiHeaders('application/octet-stream')");
+    expect(browser).not.toContain('sessions.downloads.list');
   });
 
   it('implements Stagehand typed extraction and real browser sessions', () => {
@@ -35,10 +45,10 @@ describe('Browserbase production implementation contract', () => {
     expect(contract).toContain('Submission is never implicit');
   });
 
-  it('implements Browserbase Downloads and PDF parsing', () => {
-    expect(browser).toContain('sessions.downloads.list');
+  it('implements Browserbase document download and PDF parsing', () => {
     expect(browser).toContain("import('pdf-parse')");
-    expect(browser).toContain('AdmZip');
+    expect(browser).toContain("mimeType === 'application/pdf'");
+    expect(browser).toContain('fetchDownloadBytes');
   });
 
   it('implements Browserbase geolocation proxies and caching', () => {
