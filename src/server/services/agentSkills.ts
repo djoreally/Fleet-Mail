@@ -9,6 +9,8 @@ export interface AgentSkill {
   confirmationRequired?: boolean;
 }
 
+const webConfigured = Boolean(process.env.BROWSERBASE_API_KEY?.trim() || process.env.FIRECRAWL_API_KEY?.trim());
+
 export const AGENT_SKILLS: AgentSkill[] = [
   { id: 'context-memory', name: 'Thread Context Memory', category: 'Cognitive', description: 'Grounds responses in the selected thread, recent inbox, contacts, and upcoming events.', status: 'active' },
   { id: 'predictive-drafting', name: 'Predictive Drafting', category: 'Cognitive', description: 'Anticipates response intent, deadlines, tone, and likely next actions.', status: 'active' },
@@ -19,8 +21,8 @@ export const AGENT_SKILLS: AgentSkill[] = [
   { id: 'follow-ups', name: 'Follow-up Planning', category: 'Execution', description: 'Drafts follow-up plans and due dates; durable autonomous delivery remains confirmation-gated.', status: 'guarded', confirmationRequired: true },
   { id: 'bulk-drafting', name: 'Bulk Personalized Drafting', category: 'Execution', description: 'Creates personalized drafts while keeping every outbound batch reviewable.', status: 'guarded', confirmationRequired: true },
   { id: 'inbox-search', name: 'Inbox & Contact Search', category: 'Information', description: 'Searches connected mail and resolves contacts using address plus conversation context.', status: 'connected' },
-  { id: 'website-crawl', name: 'Web Research', category: 'Information', description: 'Searches and reads public websites for grounded research without exposing provider internals to the agent.', status: process.env.FIRECRAWL_API_KEY ? 'connected' : 'guarded' },
-  { id: 'browser-access', name: 'Interactive Browser', category: 'Execution', description: 'Handles explicit browser navigation and form preparation. Consequential submission remains confirmation-gated.', status: process.env.BROWSERBASE_API_KEY ? 'connected' : 'guarded', confirmationRequired: true },
+  { id: 'website-crawl', name: 'Web Research', category: 'Information', description: 'Searches and reads the open web through server-owned research capabilities without exposing provider internals.', status: webConfigured ? 'connected' : 'guarded' },
+  { id: 'browser-access', name: 'Interactive Browser', category: 'Execution', description: 'Uses Browserbase sessions for structured extraction, dynamic browsing, form preparation, downloads, caching, and geo-aware sessions. Consequential submission remains confirmation-gated.', status: process.env.BROWSERBASE_API_KEY ? 'connected' : 'guarded', confirmationRequired: true },
   { id: 'fleet-context', name: 'Fleet Operations Context', category: 'Information', description: 'Uses vehicles, work orders, maintenance, dispatch, and invoice context when supplied.', status: 'active' },
   { id: 'pii-redaction', name: 'Sensitive Data Redaction', category: 'Trust & Safety', description: 'Redacts SSNs, payment-card patterns, and secrets before model processing.', status: 'active' },
   { id: 'sentinel', name: 'Sentinel Confirmation', category: 'Trust & Safety', description: 'Requires explicit confirmation for sends, replies, forwards, deletes, calendar writes, and browser submissions.', status: 'active', confirmationRequired: true },
@@ -40,11 +42,25 @@ export function redactObject(value: unknown): unknown {
   return value;
 }
 
+function stripToolMarkup(value: string) {
+  let output = value;
+  const pairedTags = [
+    'dots_function_call', 'function_calls', 'function_call', 'tool_calls', 'tool_call',
+    'invoke', 'tool', 'tools', 'assistant_to', 'analysis_to', 'commentary_to',
+  ];
+  for (const tag of pairedTags) {
+    output = output.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}>`, 'gi'), '');
+  }
+  output = output
+    .replace(/<\/?(?:dots_function_call|function_calls?|tool_calls?|invoke|tool|tools|assistant_to|analysis_to|commentary_to)\b[^>]*>/gi, '')
+    .replace(/&lt;\/?(?:dots_function_call|function_calls?|tool_calls?|invoke|tool|tools)\b[^&]*?&gt;/gi, '')
+    .replace(/^\s*(?:function_calls?|tool_calls?)\s*[:=].*$/gim, '')
+    .replace(/^\s*<[^>]*(?:function|tool|invoke)[^>]*>\s*$/gim, '');
+  return output;
+}
+
 export function formatAgentPlainText(value: string) {
-  return value
-    .replace(/<dots_function_call[\s\S]*?<\/dots_function_call>/gi, '')
-    .replace(/<invoke[\s\S]*?<\/invoke>/gi, '')
-    .replace(/<\/?(?:dots_function_call|invoke)[^>]*>/gi, '')
+  return stripToolMarkup(value)
     .replace(/```json:(?:email_draft|agent_action)[\s\S]*?```/gi, '')
     .replace(/```[a-z]*\s*([\s\S]*?)```/gi, '$1')
     .replace(/^\s{0,3}#{1,6}\s+/gm, '')
