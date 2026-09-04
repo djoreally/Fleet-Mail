@@ -17,6 +17,7 @@ import { maintenanceIntelligenceRouter } from './routes/maintenanceIntelligence.
 import { prospectingRouter } from './routes/prospecting.js';
 import { tenantChatRouter } from './routes/chat.js';
 import { dashboardRouter } from './routes/dashboard.js';
+import { teamRouter } from './routes/team.js';
 import { prospectWebhookService, verifyAgentMailWebhook } from './services/prospectWebhook.js';
 import { fleetAgentRuntimeMiddleware } from './services/fleetAgentRuntime.js';
 import { chatAttachmentExtractionMiddleware } from './services/chatAttachmentExtraction.js';
@@ -25,21 +26,11 @@ import { enforceAgentMailInboxScope, resolveOrganizationAgentMailInbox } from '.
 import { serverConfig } from './config.js';
 
 async function requireFleetSession(req: Request, res: Response, next: NextFunction) {
-  try {
-    await requireFleetOrganization(req);
-    return next();
-  } catch (error) {
-    return fleetAuthFailure(res, error);
-  }
+  try { await requireFleetOrganization(req); return next(); } catch (error) { return fleetAuthFailure(res, error); }
 }
 
 async function requireFleetAdmin(req: Request, res: Response, next: NextFunction) {
-  try {
-    await requireFleetPermission(req, 'infrastructure.manage');
-    return next();
-  } catch (error) {
-    return fleetAuthFailure(res, error);
-  }
+  try { await requireFleetPermission(req, 'infrastructure.manage'); return next(); } catch (error) { return fleetAuthFailure(res, error); }
 }
 
 export function createApp() {
@@ -48,9 +39,7 @@ export function createApp() {
   app.post('/api/webhooks/agentmail', express.raw({ type: 'application/json', limit: '1mb' }), async (req, res) => {
     const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
     const secret = process.env.AGENTMAIL_WEBHOOK_SECRET?.trim() || '';
-    if (!secret || !verifyAgentMailWebhook(raw, req.headers as Record<string, unknown>, secret)) {
-      return res.status(401).json({ error: 'invalid_signature' });
-    }
+    if (!secret || !verifyAgentMailWebhook(raw, req.headers as Record<string, unknown>, secret)) return res.status(401).json({ error: 'invalid_signature' });
     try {
       const payload = JSON.parse(raw.toString('utf8'));
       const result = await prospectWebhookService.handle(payload);
@@ -76,31 +65,21 @@ export function createApp() {
       browserbaseConfigured: Boolean(process.env.BROWSERBASE_API_KEY?.trim()),
     };
     if (req.header('authorization')?.startsWith('Bearer ')) {
-      try {
-        const activeInbox = await resolveOrganizationAgentMailInbox(req);
-        status.defaultInbox = activeInbox;
-        status.activeInbox = activeInbox;
-      } catch {
-        // Health status remains available even when the current session has no inbox yet.
-      }
+      try { const activeInbox = await resolveOrganizationAgentMailInbox(req); status.defaultInbox = activeInbox; status.activeInbox = activeInbox; } catch {}
     }
     return res.json(status);
   });
 
   app.get('/api/access', requireFleetSession, async (req, res) => {
-    try {
-      return res.json(await getFleetAccessContext(req));
-    } catch (error) {
-      return fleetAuthFailure(res, error);
-    }
+    try { return res.json(await getFleetAccessContext(req)); } catch (error) { return fleetAuthFailure(res, error); }
   });
 
   app.use('/api/vehicles', requireFleetSession);
   app.use('/api/contacts', requireFleetSession);
   app.use('/api/agent', requireFleetSession);
+  app.use('/api/team', requireFleetSession);
   app.use('/api/neon', requireFleetAdmin);
   app.use('/api/drizzle', requireFleetAdmin);
-
   app.use('/api/chat', requireFleetSession);
   app.use('/api/chat', enforceAgentMailInboxScope);
   app.use('/api/rewrite-tone', requireFleetSession);
@@ -118,6 +97,7 @@ export function createApp() {
   app.use('/api', apiRouter);
   app.use('/api', vehicle360Router);
   app.use('/api/google', googleRouter);
+  app.use('/api/team', teamRouter);
   app.use('/api/agentmail/crud', agentmailCrudRouter);
   app.use('/api/agent/actions', agentActionsRouter);
   app.use('/api/operations', operationsRouter);
@@ -130,6 +110,5 @@ export function createApp() {
   app.use('/api/fleet', paymentReconciliationRouter);
   app.use('/api/fleet', financialReadModelRouter);
   app.use('/api/fleet', financialDocumentsRouter);
-
   return app;
 }
