@@ -16,10 +16,11 @@ import {
   BadgeDollarSign,
   Files,
   Target,
-  LogOut
+  LogOut,
+  LayoutDashboard
 } from 'lucide-react';
 
-export type AppTab = 'inbox' | 'sent' | 'drafts' | 'contacts' | 'chat' | 'settings'
+export type AppTab = 'dashboard' | 'inbox' | 'sent' | 'drafts' | 'contacts' | 'chat' | 'settings'
   | 'vehicles' | 'work-orders' | 'maintenance' | 'dispatch' | 'parts' | 'prospects' | 'customers'
   | 'schedule' | 'financials' | 'documents';
 
@@ -54,12 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   mobileOpen = false,
   onMobileClose
 }) => {
-  const mailItems: Array<{
-    id: AppTab;
-    label: string;
-    icon: React.ReactNode;
-    count?: number;
-  }> = [
+  const mailItems: Array<{ id: AppTab; label: string; icon: React.ReactNode; count?: number }> = [
     { id: 'inbox', label: 'Fleet Inbox', icon: <Inbox className="w-4 h-4" />, count: inboxCount },
     { id: 'sent', label: 'Sent', icon: <Send className="w-4 h-4" />, count: sentCount > 0 ? sentCount : undefined },
     { id: 'drafts', label: 'Drafts', icon: <FileText className="w-4 h-4" />, count: draftsCount > 0 ? draftsCount : undefined },
@@ -87,6 +83,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center border border-blue-100 shadow-sm text-blue-600"><Wrench className="w-5 h-5" /></div>
           <div><h1 className="text-base font-bold tracking-tight text-slate-900 leading-none">Fleet OS</h1><p className="text-xs text-slate-500 font-medium mt-0.5">AI Revenue + Operations</p></div>
         </div>
+        <button id="nav-dashboard" onClick={()=>{onSelectTab('dashboard');onMobileClose?.()}} className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-colors ${currentTab==='dashboard'?'bg-[#e8f0fe] text-[#0b57d0]':'text-slate-700 hover:bg-slate-100/80'}`}><LayoutDashboard className={`w-4 h-4 ${currentTab==='dashboard'?'text-[#0b57d0]':'text-slate-600'}`}/><span>Dashboard</span></button>
         <button id="sidebar-compose-btn" onClick={onOpenCompose} className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#0b57d0] hover:bg-[#0848b0] active:scale-[0.98] text-white font-medium text-sm shadow-sm transition-all duration-150"><PenSquare className="w-4 h-4"/><span>Compose</span></button>
         <nav className="space-y-1">{mailItems.map(item=>{const isActive=currentTab===item.id;return <button key={item.id} id={`nav-${item.id}`} onClick={()=>{onSelectTab(item.id);onMobileClose?.()}} className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors duration-150 ${isActive?'bg-[#e8f0fe] text-[#0b57d0] font-semibold':'text-slate-700 hover:bg-slate-100/80 hover:text-slate-900'}`}><div className="flex items-center gap-3"><span className={isActive?'text-[#0b57d0]':'text-slate-600'}>{item.icon}</span><span>{item.label}</span></div>{typeof item.count==='number'&&item.count>0&&<span className={`px-2 py-0.5 text-[11px] font-semibold rounded-full ${isActive?'bg-blue-200/70 text-blue-900':'bg-slate-100 text-slate-600'}`}>{item.count}</span>}</button>})}</nav>
         <nav className="space-y-1" aria-label="Fleet revenue and operations"><p className="px-3.5 pb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Revenue + Operations</p>{fleetItems.map(item=>{const isActive=currentTab===item.id;return <button key={item.id} id={`nav-${item.id}`} onClick={()=>{onSelectTab(item.id);onMobileClose?.()}} className={`w-full flex items-center gap-3 px-3.5 py-2 rounded-xl text-sm font-medium transition-colors ${isActive?'bg-[#e8f0fe] text-[#0b57d0] font-semibold':'text-slate-700 hover:bg-slate-100/80'}`}><span className={isActive?'text-[#0b57d0]':'text-slate-600'}>{item.icon}</span><span>{item.label}</span></button>})}</nav>

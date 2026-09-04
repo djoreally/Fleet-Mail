@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Header } from './components/Header';
 import { Sidebar, AppTab } from './components/Sidebar';
 import { FleetModuleView, FleetModuleId } from './components/FleetModuleView';
+import { DashboardView } from './components/DashboardView';
 import { EmailList } from './components/EmailList';
 import { EmailDetail } from './components/EmailDetail';
 import { ContactsView } from './components/ContactsView';
@@ -30,7 +31,7 @@ import {
 
 function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () => void; userEmail?: string; userName?: string }) {
   const [status, setStatus] = useState<SystemStatus | null>(null);
-  const [currentTab, setCurrentTab] = useState<AppTab>('inbox');
+  const [currentTab, setCurrentTab] = useState<AppTab>('dashboard');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeInbox, setActiveInbox] = useState<string>('moms@agentmail.to');
   const [emails, setEmails] = useState<EmailMessage[]>([]);
@@ -172,6 +173,7 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
     if (success) setChatMessages(prev => [...prev, { id: `conf_${Date.now()}`, role: 'assistant', content: `Email dispatched to ${draft.to}. No calendar event was created; calendar writes require a separate reviewed confirmation.`, timestamp: new Date().toISOString() }]);
   };
   const handleAskAIAboutEmail = (email: EmailMessage) => { setCurrentTab('chat'); handleSendChatMessage(`Analyze this email from ${email.fromName || email.from} with subject "${email.subject}" and prepare response action items.`); };
+  const handleDashboardAgentPrompt = (prompt:string) => { setCurrentTab('chat'); void handleSendChatMessage(prompt); };
 
   const displayedEmails = emails.filter(email => {
     if (searchQuery.trim()) { const q = searchQuery.toLowerCase(); const fromStr = (email.fromName || email.from || '').toLowerCase(); const subjStr = (email.subject || '').toLowerCase(); const bodyStr = (email.text || '').toLowerCase(); if (!fromStr.includes(q) && !subjStr.includes(q) && !bodyStr.includes(q)) return false; }
@@ -190,12 +192,13 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
       {mobileNavOpen && <button aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} className="fixed inset-0 z-40 bg-slate-950/45 backdrop-blur-[1px] lg:hidden" />}
       <Sidebar currentTab={currentTab} onSelectTab={tab => setCurrentTab(tab)} inboxCount={inboxCount} sentCount={sentCount} draftsCount={draftsCount} contactsCount={contacts.length} onOpenCompose={() => { setComposeInitialData({}); setIsComposeOpen(true); }} userEmail={userEmail || activeInbox} userName={userName || userEmail?.split('@')[0] || 'Fleet User'} onSignOut={onSignOut} mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
       <div className="min-w-0 flex-1 flex flex-col h-full overflow-hidden bg-white">
-        <Header searchQuery={searchQuery} onSearchChange={q => setSearchQuery(q)} unreadNotificationsCount={inboxCount} onOpenHelp={() => setIsHelpConfigOpen(true)} onOpenSettings={() => setCurrentTab('settings')} pageTitle={currentTab === 'contacts' ? 'Contacts' : currentTab === 'settings' ? 'Settings' : currentTab === 'prospects' ? 'Prospects' : undefined} userAvatar="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80" onOpenMenu={() => setMobileNavOpen(true)} />
+        <Header searchQuery={searchQuery} onSearchChange={q => setSearchQuery(q)} unreadNotificationsCount={inboxCount} onOpenHelp={() => setIsHelpConfigOpen(true)} onOpenSettings={() => setCurrentTab('settings')} pageTitle={currentTab === 'dashboard' ? 'Dashboard' : currentTab === 'contacts' ? 'Contacts' : currentTab === 'settings' ? 'Settings' : currentTab === 'prospects' ? 'Prospects' : undefined} userAvatar="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80" onOpenMenu={() => setMobileNavOpen(true)} />
         <div className="flex-1 flex overflow-hidden">
+          {currentTab === 'dashboard' && <DashboardView onNavigate={setCurrentTab} onAskAgent={handleDashboardAgentPrompt} />}
           {(currentTab === 'inbox' || currentTab === 'sent' || currentTab === 'drafts') && <div className="flex-1 flex w-full h-full min-w-0 overflow-hidden"><div className={`${mobileEmailOpen ? 'hidden' : 'flex'} h-full w-full md:flex md:w-auto`}><EmailList emails={displayedEmails} selectedEmailId={selectedEmailId} onSelectEmail={email => { setSelectedEmailId(email.id); setMobileEmailOpen(true); setEmails(prev => prev.map(e => e.id === email.id ? { ...e, read: true } : e)); }} folderTitle={currentTab === 'inbox' ? 'Inbox' : currentTab === 'sent' ? 'Sent' : 'Drafts'} onRefresh={() => fetchEmails(false)} isRefreshing={isRefreshing} activeInbox={activeInbox} /></div><div className={`${mobileEmailOpen ? 'flex' : 'hidden'} min-w-0 flex-1 md:flex`}><EmailDetail email={selectedEmail} onSendReply={handleSendReply} onAskAIAboutEmail={handleAskAIAboutEmail} onUpdateEmailSummary={handleUpdateEmailSummary} userAvatar="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80" onBack={() => setMobileEmailOpen(false)} /></div></div>}
           {currentTab === 'contacts' && <ContactsView contacts={contacts} emails={emails} onAddContact={handleAddContact} onUpdateContact={handleUpdateContact} onDeleteContact={handleDeleteContact} onExtractFromInbox={handleExtractFromInbox} onComposeTo={handleComposeToContact} onAskAIAboutContact={handleAskAIAboutContact} />}
           {currentTab === 'chat' && <AIChatView messages={chatMessages} onSendMessage={handleSendChatMessage} isLoading={isChatLoading} onSendAndScheduleDraft={handleSendAndScheduleDraft} onConfirmAction={handleConfirmAgentAction} userAvatar="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80" />}
-          {currentTab === 'settings' && <SettingsView settings={settings} onSaveSettings={newSettings => setSettings(newSettings)} onCancel={() => setCurrentTab('inbox')} />}
+          {currentTab === 'settings' && <SettingsView settings={settings} onSaveSettings={newSettings => setSettings(newSettings)} onCancel={() => setCurrentTab('dashboard')} />}
           {currentTab === 'vehicles' && <VehicleWorkspace />}
           {(['work-orders','maintenance','schedule','dispatch','parts','prospects','customers','financials','documents'] as FleetModuleId[]).includes(currentTab as FleetModuleId) && <FleetModuleView module={currentTab as FleetModuleId} onOpenInbox={() => setCurrentTab('inbox')} />}
         </div>

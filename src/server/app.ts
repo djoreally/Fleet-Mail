@@ -15,6 +15,7 @@ import { workOrderCompletionRouter } from './routes/workOrderCompletion.js';
 import { maintenanceIntelligenceRouter } from './routes/maintenanceIntelligence.js';
 import { prospectingRouter } from './routes/prospecting.js';
 import { tenantChatRouter } from './routes/chat.js';
+import { dashboardRouter } from './routes/dashboard.js';
 import { prospectWebhookService, verifyAgentMailWebhook } from './services/prospectWebhook.js';
 import { fleetAgentRuntimeMiddleware } from './services/fleetAgentRuntime.js';
 import { chatAttachmentExtractionMiddleware } from './services/chatAttachmentExtraction.js';
@@ -62,8 +63,6 @@ export function createApp() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
-  // Public health contract exposes only provider readiness. Authenticated app
-  // sessions additionally receive their own organization-scoped active inbox.
   app.get('/api/status', async (req, res) => {
     const atlasKey = process.env.ATLASCLOUD_API_KEY;
     const agentKey = process.env.AGENTMAIL_API_KEY;
@@ -87,16 +86,12 @@ export function createApp() {
     return res.json(status);
   });
 
-  // Legacy utility surfaces are private. Database-management endpoints require
-  // an administrative organization role, not merely a valid login.
   app.use('/api/vehicles', requireFleetSession);
   app.use('/api/contacts', requireFleetSession);
   app.use('/api/agent', requireFleetSession);
   app.use('/api/neon', requireFleetAdmin);
   app.use('/api/drizzle', requireFleetAdmin);
 
-  // AI and communications surfaces can expose tenant data or cause external side
-  // effects. They must always enter through a verified Fleet session.
   app.use('/api/chat', requireFleetSession);
   app.use('/api/chat', enforceAgentMailInboxScope);
   app.use('/api/rewrite-tone', requireFleetSession);
@@ -109,6 +104,7 @@ export function createApp() {
   app.use('/api/chat', fleetAgentRuntimeMiddleware);
   app.use('/api/chat', tenantChatRouter);
 
+  app.use('/api', dashboardRouter);
   app.use('/api', apiRouter);
   app.use('/api', vehicle360Router);
   app.use('/api/google', googleRouter);
