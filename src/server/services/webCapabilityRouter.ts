@@ -64,29 +64,36 @@ export function resolveWebCapability(plan: AgentToolPlan): WebCapability {
 }
 
 async function researchWithFallback(userText: string, url: string | null) {
+  let browserbaseError: unknown = null;
   if (process.env.BROWSERBASE_API_KEY?.trim()) {
-    if (url) {
-      const result = await extractCompanyWithBrowserbase(url);
+    try {
+      if (url) {
+        const result = await extractCompanyWithBrowserbase(url);
+        return {
+          provider: 'browserbase' as const,
+          sourceUrls: [result.sourceUrl],
+          content: result.data,
+          sessionId: result.sessionId,
+          cacheStatus: result.cacheStatus,
+        };
+      }
+      const query = cleanSearchQuery(userText);
+      if (!query) throw new Error('A search query or website URL is required.');
+      const results = await searchWithBrowserbase(query, 8);
+      if (!results.length) throw new Error('The Browserbase web search returned no results.');
       return {
         provider: 'browserbase' as const,
-        sourceUrls: [result.sourceUrl],
-        content: result.data,
-        sessionId: result.sessionId,
-        cacheStatus: result.cacheStatus,
+        sourceUrls: results.map((result) => result.url),
+        content: { query, results },
       };
+    } catch (error) {
+      browserbaseError = error;
+      console.warn('Browserbase research unavailable, attempting Firecrawl fallback:', error instanceof Error ? error.message : error);
     }
-    const query = cleanSearchQuery(userText);
-    if (!query) throw new Error('A search query or website URL is required.');
-    const results = await searchWithBrowserbase(query, 8);
-    if (!results.length) throw new Error('The web search returned no results.');
-    return {
-      provider: 'browserbase' as const,
-      sourceUrls: results.map((result) => result.url),
-      content: { query, results },
-    };
   }
 
   if (!process.env.FIRECRAWL_API_KEY?.trim()) {
+    if (browserbaseError instanceof Error) throw browserbaseError;
     throw new Error('Open-web research is not configured.');
   }
   if (url) {
@@ -108,10 +115,7 @@ async function researchWithFallback(userText: string, url: string | null) {
   };
 }
 
-/**
- * Execute exactly one server-owned web capability. The LLM never chooses a
- * provider and never receives credentials or raw provider invocation syntax.
- */
+/** Execute exactly one server-owned web capability. */
 export async function executeWebCapability(userText: string, plan: AgentToolPlan): Promise<WebCapabilityResult> {
   const startedAt = Date.now();
   const capability = resolveWebCapability(plan);

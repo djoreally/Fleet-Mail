@@ -63,9 +63,12 @@ export function planAgentTools(userText: string): AgentToolPlan {
   const tools = new Set<AgentReadTool>();
   const add = (...selected: AgentReadTool[]) => selected.forEach((tool) => tools.add(tool));
 
-  const personIntent = includesAny(text, ['who is ', 'contact', 'email address', 'phone number', 'decision maker', 'manager', 'owner']);
+  // Names are first-class FleetOS entities. Questions like "Do you know who Zachary is?"
+  // must search tenant-scoped people/account context before considering the open web.
+  const personQuestion = /\b(?:who\s+is|who['’]s|do\s+you\s+know(?:\s+who)?|tell\s+me\s+about)\b/i.test(source);
+  const personIntent = personQuestion || includesAny(text, ['contact', 'email address', 'phone number', 'decision maker', 'manager', 'owner']);
   const prospectIntent = includesAny(text, ['prospect', 'prospecting', 'lead', 'pipeline', 'opportunity', 'qualified', 'outreach', 'follow up', 'follow-up']);
-  const accountIntent = includesAny(text, ['customer', 'client', 'fleet account', 'company']);
+  const accountIntent = includesAny(text, ['customer', 'client', 'client account', 'fleet client', 'fleet account', 'company account', 'account profile', 'company']);
   const locationIntent = includesAny(text, ['location', 'service address', 'billing address', 'where is', 'site ']);
   const vehicleIntent = includesAny(text, ['vehicle', 'unit ', 'vin', 'truck', 'van', 'oil filter', 'oil type', 'oil capacity', 'mileage', 'engine hours']);
   const workOrderIntent = includesAny(text, ['work order', 'wo-', 'service order', 'repair order', 'scheduled service']);

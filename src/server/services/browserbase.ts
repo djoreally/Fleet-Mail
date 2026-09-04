@@ -17,6 +17,8 @@ export interface BrowserbaseSearchResult {
   title: string;
   url: string;
   snippet: string;
+  author?: string;
+  publishedDate?: string;
 }
 
 export interface BrowserbaseGeo {
@@ -99,31 +101,50 @@ async function withStagehand<T>(
   }
 }
 
+/**
+ * Browserbase Search has no SDK method yet. Use the documented direct HTTP API.
+ * Search returns discovery metadata only; Fetch/Stagehand are used for page content.
+ */
 export async function searchWithBrowserbase(query: string, limit = 8): Promise<BrowserbaseSearchResult[]> {
   const cleaned = String(query || '').trim().slice(0, 500);
   if (!cleaned) throw new Error('A web search query is required.');
-  const response = await client().search.web({ query: cleaned, numResults: Math.max(1, Math.min(limit, 10)) });
-  return (response.results || []).map((result: any) => ({
+  const response = await fetch('https://api.browserbase.com/v1/search', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-BB-API-Key': apiKey(),
+    },
+    body: JSON.stringify({ query: cleaned, numResults: Math.max(1, Math.min(limit, 25)) }),
+  });
+  if (!response.ok) {
+    throw new Error(`Browserbase Search failed with HTTP ${response.status}.`);
+  }
+  const data = await response.json() as { results?: Array<Record<string, unknown>> };
+  return (data.results || []).map((result) => ({
     title: String(result.title || ''),
     url: String(result.url || ''),
-    snippet: String(result.snippet || result.description || result.text || ''),
-  })).filter((result: BrowserbaseSearchResult) => result.url);
+    snippet: String(result.description || result.snippet || ''),
+    author: result.author ? String(result.author) : undefined,
+    publishedDate: result.publishedDate ? String(result.publishedDate) : undefined,
+  })).filter((result) => result.url);
 }
 
-/** Lightweight Browserbase Fetch API path. */
+/** Lightweight Browserbase Fetch API path for static/non-JS pages. */
 export async function fetchWithBrowserbaseDirect(
   rawUrl: string,
   urlValidator: typeof validatePublicUrl = validatePublicUrl,
 ): Promise<BrowserbasePage> {
   const url = await urlValidator(rawUrl);
-  const data = await client().fetchAPI.create({ url: url.href, allowRedirects: true, format: 'markdown' } as any);
+  const data = await client().fetchAPI.create({ url: url.href, allowRedirects: true });
+  const statusCode = Number((data as any).statusCode || 0);
+  if (statusCode >= 400) throw new Error(`Browserbase Fetch failed with HTTP ${statusCode}.`);
   const content = typeof data.content === 'string' ? data.content.slice(0, 24_000) : JSON.stringify(data.content).slice(0, 24_000);
-  if (!content.trim()) throw new Error('Browserbase loaded the page, but no readable content was returned.');
+  if (!content.trim()) throw new Error('Browserbase Fetch returned no readable content; use a browser session for JavaScript-rendered content.');
   return {
     sourceUrl: url.href,
     requestId: String((data as any).id || ''),
-    statusCode: Number((data as any).statusCode || 200),
-    contentType: String((data as any).contentType || 'text/markdown'),
+    statusCode: statusCode || 200,
+    contentType: String((data as any).contentType || 'text/html'),
     content,
     provider: 'browserbase',
   };
@@ -220,9 +241,6 @@ async function pollDownloads(sessionId: string, timeoutMs = 45_000): Promise<Buf
 export async function downloadDocumentWithBrowserbase(rawUrl: string) {
   return withStagehand(rawUrl, async (_stagehand, page, sessionId, sourceUrl) => {
     if (!sessionId) throw new Error('Browserbase did not return a session ID for the download.');
-    // Opening a direct downloadable document in a Browserbase session records it in
-    // the session Downloads API. For link pages, the document capability should be
-    // given the actual document URL discovered during research/extraction.
     await page.goto(sourceUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 }).catch(() => undefined);
     const archive = await pollDownloads(sessionId);
     const zip = new AdmZip(archive);
@@ -254,8 +272,8 @@ export async function downloadDocumentWithBrowserbase(rawUrl: string) {
 }
 
 /**
- * Legacy compatibility entry point. Research should use the Browserbase Search API
- * first in the capability router; Firecrawl remains a compatibility fallback.
+ * Legacy compatibility entry point. Research should use Browserbase Search first;
+ * Firecrawl remains a compatibility fallback. Fetch is for static content only.
  */
 export async function fetchWithBrowserbase(
   rawUrl: string,
