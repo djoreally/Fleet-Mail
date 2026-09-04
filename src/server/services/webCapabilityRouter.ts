@@ -1,5 +1,11 @@
 import { crawlWebsite, extractWebsiteUrl, searchWeb } from './firecrawl.js';
-import { fetchWithBrowserbaseDirect } from './browserbase.js';
+import {
+  browseWithBrowserbase,
+  downloadDocumentWithBrowserbase,
+  extractCompanyWithBrowserbase,
+  prepareFormWithBrowserbase,
+  searchWithBrowserbase,
+} from './browserbase.js';
 import type { AgentToolPlan } from './agentToolRouter.js';
 
 export type WebCapability = 'none' | 'research' | 'browse' | 'document' | 'form';
@@ -13,6 +19,8 @@ export interface WebCapabilityResult {
   content: unknown;
   error?: string;
   durationMs: number;
+  sessionId?: string;
+  cacheStatus?: string;
 }
 
 const CACHE_TTL_MS = 10 * 60_000;
@@ -55,10 +63,54 @@ export function resolveWebCapability(plan: AgentToolPlan): WebCapability {
   return 'none';
 }
 
+async function researchWithFallback(userText: string, url: string | null) {
+  if (process.env.BROWSERBASE_API_KEY?.trim()) {
+    if (url) {
+      const result = await extractCompanyWithBrowserbase(url);
+      return {
+        provider: 'browserbase' as const,
+        sourceUrls: [result.sourceUrl],
+        content: result.data,
+        sessionId: result.sessionId,
+        cacheStatus: result.cacheStatus,
+      };
+    }
+    const query = cleanSearchQuery(userText);
+    if (!query) throw new Error('A search query or website URL is required.');
+    const results = await searchWithBrowserbase(query, 8);
+    if (!results.length) throw new Error('The web search returned no results.');
+    return {
+      provider: 'browserbase' as const,
+      sourceUrls: results.map((result) => result.url),
+      content: { query, results },
+    };
+  }
+
+  if (!process.env.FIRECRAWL_API_KEY?.trim()) {
+    throw new Error('Open-web research is not configured.');
+  }
+  if (url) {
+    const result = await crawlWebsite(url);
+    return {
+      provider: 'firecrawl' as const,
+      sourceUrls: result.pages.map((page) => page.url),
+      content: result,
+    };
+  }
+  const query = cleanSearchQuery(userText);
+  if (!query) throw new Error('A search query or website URL is required.');
+  const results = await searchWeb(query, { limit: 8 });
+  if (!results.length) throw new Error('The web search returned no results.');
+  return {
+    provider: 'firecrawl' as const,
+    sourceUrls: results.map((result) => result.url),
+    content: { query, results },
+  };
+}
+
 /**
- * Executes one deterministic web capability. The language model never chooses a
- * provider directly; it receives only this normalized result after execution.
- * Research is Firecrawl-only. Browserbase is reserved for explicit browser work.
+ * Execute exactly one server-owned web capability. The LLM never chooses a
+ * provider and never receives credentials or raw provider invocation syntax.
  */
 export async function executeWebCapability(userText: string, plan: AgentToolPlan): Promise<WebCapabilityResult> {
   const startedAt = Date.now();
@@ -68,32 +120,20 @@ export async function executeWebCapability(userText: string, plan: AgentToolPlan
   }
 
   const prior = cached(capability, userText);
-  if (prior) return { ...prior, durationMs: 0 };
+  if (prior) return { ...prior, durationMs: 0, cacheStatus: prior.cacheStatus || 'fleet-runtime-hit' };
 
   const url = extractWebsiteUrl(userText);
   try {
     if (capability === 'research') {
-      if (!process.env.FIRECRAWL_API_KEY?.trim()) throw new Error('Web research is not configured.');
-      if (url) {
-        const result = await crawlWebsite(url);
-        return remember(capability, userText, {
-          capability,
-          provider: 'firecrawl',
-          status: 'success',
-          sourceUrls: result.pages.map((page) => page.url),
-          content: result,
-          durationMs: Date.now() - startedAt,
-        });
-      }
-      const query = cleanSearchQuery(userText);
-      if (!query) throw new Error('A search query or website URL is required.');
-      const results = await searchWeb(query, { limit: 8 });
+      const result = await researchWithFallback(userText, url);
       return remember(capability, userText, {
         capability,
-        provider: 'firecrawl',
+        provider: result.provider,
         status: 'success',
-        sourceUrls: results.map((result) => result.url),
-        content: { query, results },
+        sourceUrls: result.sourceUrls,
+        content: result.content,
+        sessionId: result.sessionId,
+        cacheStatus: result.cacheStatus,
         durationMs: Date.now() - startedAt,
       });
     }
@@ -105,44 +145,66 @@ export async function executeWebCapability(userText: string, plan: AgentToolPlan
         status: 'blocked',
         sourceUrls: [],
         content: null,
-        error: 'A direct HTTPS URL is required for browser interaction.',
+        error: 'A direct HTTPS URL is required for this browser task.',
         durationMs: Date.now() - startedAt,
       };
     }
 
     if (!process.env.BROWSERBASE_API_KEY?.trim()) throw new Error('Browser interaction is not configured.');
 
-    // Browserbase read/navigation is safe to execute immediately. Mutating form
-    // submission remains a confirmation-gated action and is not auto-submitted.
-    const page = await fetchWithBrowserbaseDirect(url);
-    if (capability === 'form') {
+    if (capability === 'browse') {
+      const result = await browseWithBrowserbase(url);
       return remember(capability, userText, {
         capability,
         provider: 'browserbase',
         status: 'success',
-        sourceUrls: [page.sourceUrl],
-        content: {
-          page,
-          mode: 'prepare-only',
-          confirmationRequiredForSubmission: true,
-          instruction: 'Inspect the rendered form and prepare field mappings; do not submit without explicit confirmation.',
-        },
+        sourceUrls: [result.sourceUrl],
+        content: result.data,
+        sessionId: result.sessionId,
+        cacheStatus: result.cacheStatus,
         durationMs: Date.now() - startedAt,
       });
     }
 
-    return remember(capability, userText, {
+    if (capability === 'form') {
+      const result = await prepareFormWithBrowserbase(url);
+      return remember(capability, userText, {
+        capability,
+        provider: 'browserbase',
+        status: 'success',
+        sourceUrls: [result.sourceUrl],
+        content: result.data,
+        sessionId: result.sessionId,
+        cacheStatus: result.cacheStatus,
+        durationMs: Date.now() - startedAt,
+      });
+    }
+
+    if (capability === 'document') {
+      const result = await downloadDocumentWithBrowserbase(url);
+      return remember(capability, userText, {
+        capability,
+        provider: 'browserbase',
+        status: 'success',
+        sourceUrls: [result.sourceUrl],
+        content: result.data,
+        sessionId: result.sessionId,
+        durationMs: Date.now() - startedAt,
+      });
+    }
+
+    return {
       capability,
-      provider: 'browserbase',
-      status: 'success',
-      sourceUrls: [page.sourceUrl],
-      content: page,
+      provider: 'none',
+      status: 'skipped',
+      sourceUrls: [],
+      content: null,
       durationMs: Date.now() - startedAt,
-    });
+    };
   } catch (error) {
     return {
       capability,
-      provider: capability === 'research' ? 'firecrawl' : 'browserbase',
+      provider: capability === 'research' && !process.env.BROWSERBASE_API_KEY?.trim() ? 'firecrawl' : 'browserbase',
       status: 'failed',
       sourceUrls: url ? [url] : [],
       content: null,
