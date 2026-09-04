@@ -17,6 +17,12 @@ describe('Fleet agent tool router', () => {
     expect(plan.readTools).toEqual(expect.arrayContaining(['contacts.search', 'prospects.search', 'fleetAccounts.search', 'email.search']));
   });
 
+  it('keeps a known-person question inside FleetOS first', () => {
+    const plan = planAgentTools('Do you know who Zachary is?');
+    expect(plan.readTools).toEqual(expect.arrayContaining(['contacts.search', 'prospects.search', 'fleetAccounts.search', 'email.search']));
+    expect(plan.webCapability).toBe('none');
+  });
+
   it('routes a work order through its operational dependencies', () => {
     const plan = planAgentTools('Show work order WO-218 inspection, authorization, dispatch and invoice status');
     expect(plan.readTools).toEqual(expect.arrayContaining([
@@ -36,6 +42,17 @@ describe('Fleet agent tool router', () => {
     expect(planAgentTools('Open https://example.com and inspect the vendor page')).toMatchObject({ webMode: 'browser', webCapability: 'browse' });
     expect(planAgentTools('Fill out the vendor registration form at https://example.com/vendor')).toMatchObject({ webMode: 'browser', webCapability: 'form' });
     expect(planAgentTools('Download the PDF from https://example.com/receipt.pdf')).toMatchObject({ webMode: 'browser', webCapability: 'document' });
+  });
+
+  it('routes real prospect-discovery language to open-web research without requiring a URL', () => {
+    expect(planAgentTools('Find a new company in the 19002 area for prospecting')).toMatchObject({
+      webMode: 'research',
+      webCapability: 'research',
+    });
+    expect(planAgentTools('Find a business in 19002 that could use fleet maintenance')).toMatchObject({
+      webMode: 'research',
+      webCapability: 'research',
+    });
   });
 
   it('does not treat a plain company question as a browser task', () => {
