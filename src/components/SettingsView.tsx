@@ -1,20 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import {
-  Sparkles,
-  Bell,
-  ArrowLeftRight,
-  Mail,
-  Calendar,
-  Trash2,
-  Plus,
-  Check,
-  Bot,
-  ShieldCheck,
-  Zap,
-  Database
-} from 'lucide-react';
-import { PersonalizationSettings, ConnectedAccount } from '../types';
-import { NeonDatabasePanel } from './NeonDatabasePanel';
+import { Bell, Bot, Building2, Calendar, Check, Globe2, Mail, MapPin, ShieldCheck, Sparkles } from 'lucide-react';
+import type { PersonalizationSettings } from '../types';
 
 interface SettingsViewProps {
   settings: PersonalizationSettings;
@@ -22,417 +8,72 @@ interface SettingsViewProps {
   onCancel?: () => void;
 }
 
-export const SettingsView: React.FC<SettingsViewProps> = ({
-  settings,
-  onSaveSettings,
-  onCancel
-}) => {
-  const [personality, setPersonality] = useState<'Professional' | 'Friendly' | 'Concise'>(
-    settings.personalityFocus || 'Professional'
-  );
-  const [importantOnly, setImportantOnly] = useState<boolean>(
-    settings.importantEmailsOnly ?? true
-  );
-  const [dailyDigest, setDailyDigest] = useState<boolean>(
-    settings.dailyAIDigest ?? false
-  );
-  const [accounts, setAccounts] = useState<ConnectedAccount[]>(
-    settings.connectedAccounts || [
-      {
-        id: 'acc-1',
-        name: 'Work Email (Google)',
-        type: 'google',
-        email: 'user@company.com'
-      },
-      {
-        id: 'acc-2',
-        name: 'Personal Calendar (Outlook)',
-        type: 'outlook',
-        email: 'user@outlook.com'
-      },
-      {
-        id: 'acc-3',
-        name: 'AgentMail Live Inbox (AtlasCloud Dots-3)',
-        type: 'agentmail',
-        email: 'moms@agentmail.to'
-      }
-    ]
-  );
-  const [isAddAccountModalOpen, setIsAddAccountModalOpen] = useState(false);
-  const [newAccName, setNewAccName] = useState('');
-  const [newAccEmail, setNewAccEmail] = useState('');
-  const [showSavedToast, setShowSavedToast] = useState(false);
-  const [google, setGoogle] = useState<{ configured: boolean; connected: boolean; account?: { email: string; name?: string } } | null>(null);
-  const [googleBusy, setGoogleBusy] = useState(false);
-
-  const loadGoogleStatus = async () => {
-    try {
-      const response = await fetch('/api/google/status');
-      const data = await response.json();
-      setGoogle(data);
-    } catch {
-      setGoogle({ configured: false, connected: false });
-    }
-  };
-
-  useEffect(() => { void loadGoogleStatus(); }, []);
-
-  const disconnectGoogle = async () => {
-    setGoogleBusy(true);
-    try {
-      await fetch('/api/google/disconnect', { method: 'POST' });
-      await loadGoogleStatus();
-    } finally { setGoogleBusy(false); }
-  };
-
-  const handleSave = () => {
-    onSaveSettings({
-      personalityFocus: personality,
-      importantEmailsOnly: importantOnly,
-      dailyAIDigest: dailyDigest,
-      connectedAccounts: accounts
-    });
-    setShowSavedToast(true);
-    setTimeout(() => setShowSavedToast(false), 2500);
-  };
-
-  const handleDeleteAccount = (id: string) => {
-    setAccounts(accounts.filter((a) => a.id !== id));
-  };
-
-  const handleAddAccount = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newAccName.trim() || !newAccEmail.trim()) return;
-
-    setAccounts([
-      ...accounts,
-      {
-        id: `acc-${Date.now()}`,
-        name: newAccName.trim(),
-        type: 'custom',
-        email: newAccEmail.trim()
-      }
-    ]);
-    setNewAccName('');
-    setNewAccEmail('');
-    setIsAddAccountModalOpen(false);
-  };
-
-  return (
-    <div id="settings-view-container" className="flex-1 bg-white flex flex-col h-full overflow-y-auto select-none">
-      <div className="max-w-5xl w-full mx-auto p-6 md:p-10 space-y-8">
-        {/* Title Section */}
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
-            AI Personalization
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Customize how your AI assistant interacts and manages your communications.
-          </p>
-        </div>
-
-        {/* Top 2 Cards: AI Personality Focus & Notifications */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Card 1: AI Personality Focus (Takes 8 cols) */}
-          <div className="lg:col-span-8 p-6 rounded-2xl border border-slate-200 bg-white space-y-4 shadow-xs">
-            <div className="flex items-center gap-2.5 text-slate-900 font-bold text-base">
-              <Sparkles className="w-5 h-5 text-[#0b57d0]" />
-              <span>AI Personality Focus</span>
-            </div>
-            <p className="text-xs text-slate-500">
-              Select the default tone and style for AI-generated responses and summaries.
-            </p>
-
-            {/* 3 Tone Option Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-              {/* Professional */}
-              <div
-                id="tone-opt-professional"
-                onClick={() => setPersonality('Professional')}
-                className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                  personality === 'Professional'
-                    ? 'border-[#0b57d0] bg-[#e8f0fe] ring-1 ring-[#0b57d0]'
-                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/60 bg-white'
-                }`}
-              >
-                <p className={`text-sm font-bold ${
-                  personality === 'Professional' ? 'text-[#0b57d0]' : 'text-slate-900'
-                }`}>
-                  Professional
-                </p>
-                <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
-                  Formal, structured, and objective language.
-                </p>
-              </div>
-
-              {/* Friendly */}
-              <div
-                id="tone-opt-friendly"
-                onClick={() => setPersonality('Friendly')}
-                className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                  personality === 'Friendly'
-                    ? 'border-[#0b57d0] bg-[#e8f0fe] ring-1 ring-[#0b57d0]'
-                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/60 bg-white'
-                }`}
-              >
-                <p className={`text-sm font-bold ${
-                  personality === 'Friendly' ? 'text-[#0b57d0]' : 'text-slate-900'
-                }`}>
-                  Friendly
-                </p>
-                <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
-                  Warm, approachable, and empathetic tone.
-                </p>
-              </div>
-
-              {/* Concise */}
-              <div
-                id="tone-opt-concise"
-                onClick={() => setPersonality('Concise')}
-                className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                  personality === 'Concise'
-                    ? 'border-[#0b57d0] bg-[#e8f0fe] ring-1 ring-[#0b57d0]'
-                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/60 bg-white'
-                }`}
-              >
-                <p className={`text-sm font-bold ${
-                  personality === 'Concise' ? 'text-[#0b57d0]' : 'text-slate-900'
-                }`}>
-                  Concise
-                </p>
-                <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
-                  Direct, brief, focusing strictly on facts.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Card 2: Notifications (Takes 4 cols) */}
-          <div className="lg:col-span-4 p-6 rounded-2xl border border-slate-200 bg-white space-y-5 shadow-xs">
-            <div className="flex items-center gap-2.5 text-slate-900 font-bold text-base">
-              <Bell className="w-5 h-5 text-[#0b57d0]" />
-              <span>Notifications</span>
-            </div>
-
-            <div className="space-y-4">
-              {/* Toggle 1: Important Emails Only */}
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">
-                    Important Emails Only
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    AI filters non-essential alerts.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  id="toggle-important-emails"
-                  onClick={() => setImportantOnly(!importantOnly)}
-                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 shrink-0 ${
-                    importantOnly ? 'bg-[#0b57d0]' : 'bg-slate-200'
-                  }`}
-                >
-                  <div
-                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${
-                      importantOnly ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
-              </div>
-
-              {/* Toggle 2: Daily AI Digest */}
-              <div className="flex items-start justify-between gap-3 pt-2">
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">
-                    Daily AI Digest
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Receive a morning summary.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  id="toggle-daily-digest"
-                  onClick={() => setDailyDigest(!dailyDigest)}
-                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 shrink-0 ${
-                    dailyDigest ? 'bg-[#0b57d0]' : 'bg-slate-200'
-                  }`}
-                >
-                  <div
-                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${
-                      dailyDigest ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Card 3: Neon Database & Auth Quickstart */}
-        <NeonDatabasePanel />
-
-        <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-start gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center">
-                <Mail className="w-5 h-5 text-[#0b57d0]" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-slate-900">Google Workspace</p>
-                <p className="text-xs text-slate-500 mt-1">
-                  {google?.connected
-                    ? `${google.account?.email || 'Google account'} · Gmail and Calendar connected`
-                    : 'Connect Gmail and Google Calendar with one secure authorization.'}
-                </p>
-                {google?.connected && <span className="inline-flex mt-2 items-center gap-1 text-[11px] font-semibold text-emerald-700"><ShieldCheck className="w-3.5 h-3.5" />Encrypted connection active</span>}
-                {google && !google.configured && <p className="text-[11px] text-amber-700 mt-2">Google OAuth environment variables are incomplete.</p>}
-              </div>
-            </div>
-            {google?.connected ? (
-              <button type="button" disabled={googleBusy} onClick={disconnectGoogle} className="px-4 py-2 rounded-xl text-xs font-semibold text-red-700 border border-red-200 hover:bg-red-50 disabled:opacity-50">Disconnect</button>
-            ) : (
-              <a href="/api/google/oauth/start" aria-disabled={!google?.configured} className={`px-4 py-2 rounded-xl text-xs font-semibold text-white bg-[#0b57d0] hover:bg-[#0848b0] text-center ${!google?.configured ? 'opacity-50 pointer-events-none' : ''}`}>Connect Google</a>
-            )}
-          </div>
-        </div>
-
-        {/* Card 4: Connected Accounts */}
-        <div className="p-6 rounded-2xl border border-slate-200 bg-white space-y-4 shadow-xs">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5 text-slate-900 font-bold text-base">
-              <ArrowLeftRight className="w-5 h-5 text-[#0b57d0]" />
-              <span>Connected Accounts</span>
-            </div>
-            <button
-              id="add-account-btn"
-              onClick={() => setIsAddAccountModalOpen(true)}
-              className="text-xs font-semibold text-[#0b57d0] hover:text-[#0848b0] transition-colors cursor-pointer"
-            >
-              Add Account
-            </button>
-          </div>
-
-          {/* Account Rows */}
-          <div className="divide-y divide-slate-100">
-            {accounts.map((acc) => (
-              <div
-                key={acc.id}
-                className="py-3.5 flex items-center justify-between gap-4"
-              >
-                <div className="flex items-center gap-3.5">
-                  <div className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600">
-                    {acc.type === 'outlook' ? (
-                      <Calendar className="w-4 h-4 text-slate-700" />
-                    ) : (
-                      <Mail className="w-4 h-4 text-slate-700" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-slate-900">
-                      {acc.name}
-                    </p>
-                    <p className="text-xs text-slate-500 font-mono">
-                      {acc.email}
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => handleDeleteAccount(acc.id)}
-                  title="Remove account"
-                  className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Bottom Save & Cancel Buttons */}
-        <div className="flex items-center justify-end gap-3 pt-4">
-          <button
-            id="settings-cancel-btn"
-            onClick={onCancel}
-            className="px-5 py-2 rounded-xl text-sm font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs"
-          >
-            Cancel
-          </button>
-          <button
-            id="settings-save-btn"
-            onClick={handleSave}
-            className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-[#0b57d0] hover:bg-[#0848b0] shadow-xs transition-colors cursor-pointer"
-          >
-            Save Changes
-          </button>
-        </div>
-      </div>
-
-      {/* Toast Notification */}
-      {showSavedToast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-2.5 text-xs font-semibold animate-fadeIn">
-          <Check className="w-4 h-4 text-emerald-400" />
-          <span>Personalization preferences saved successfully!</span>
-        </div>
-      )}
-
-      {/* Add Account Modal */}
-      {isAddAccountModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white max-w-md w-full rounded-2xl p-6 shadow-xl border border-slate-200 space-y-4">
-            <h3 className="text-base font-bold text-slate-900">
-              Connect New Account
-            </h3>
-            <form onSubmit={handleAddAccount} className="space-y-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  Account Name
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Enterprise Exchange or Google Workspace"
-                  value={newAccName}
-                  onChange={(e) => setNewAccName(e.target.value)}
-                  className="w-full p-2.5 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#0b57d0]"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  placeholder="user@domain.com"
-                  value={newAccEmail}
-                  onChange={(e) => setNewAccEmail(e.target.value)}
-                  className="w-full p-2.5 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#0b57d0]"
-                  required
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setIsAddAccountModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-[#0b57d0] hover:bg-[#0848b0]"
-                >
-                  Connect Account
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+const DEFAULT_BUSINESS = {
+  businessName: '', businessEmail: '', businessPhone: '', website: '', address: '', city: '', region: '', postalCode: '', timezone: 'America/New_York'
 };
+const DEFAULT_AGENT = { allowWebResearch: true, allowNhtsaVinDecode: true, allowCameraOcr: true, requireConfirmationForWrites: true };
+
+export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSaveSettings, onCancel }) => {
+  const [draft, setDraft] = useState<PersonalizationSettings>({
+    ...settings,
+    businessProfile: settings.businessProfile || DEFAULT_BUSINESS,
+    agentPreferences: settings.agentPreferences || DEFAULT_AGENT,
+  });
+  const [saved, setSaved] = useState(false);
+  const [google, setGoogle] = useState<{configured:boolean;connected:boolean;account?:{email:string;name?:string}} | null>(null);
+  const [googleBusy,setGoogleBusy]=useState(false);
+  useEffect(()=>setDraft({...settings,businessProfile:settings.businessProfile||DEFAULT_BUSINESS,agentPreferences:settings.agentPreferences||DEFAULT_AGENT}),[settings]);
+  const loadGoogle=async()=>{try{const r=await fetch('/api/google/status');setGoogle(await r.json());}catch{setGoogle({configured:false,connected:false});}};
+  useEffect(()=>{void loadGoogle();},[]);
+  const setBusiness=(key:string,value:string)=>setDraft(current=>({...current,businessProfile:{...(current.businessProfile||DEFAULT_BUSINESS),[key]:value}}));
+  const setAgent=(key:string,value:boolean)=>setDraft(current=>({...current,agentPreferences:{...(current.agentPreferences||DEFAULT_AGENT),[key]:value}}));
+  const save=()=>{onSaveSettings(draft);try{localStorage.setItem('fleetos:user-settings',JSON.stringify(draft));}catch{}setSaved(true);setTimeout(()=>setSaved(false),2200);};
+  const disconnectGoogle=async()=>{setGoogleBusy(true);try{await fetch('/api/google/disconnect',{method:'POST'});await loadGoogle();}finally{setGoogleBusy(false);}};
+
+  return <div className="flex-1 overflow-y-auto bg-slate-50/60">
+    <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6 lg:p-8">
+      <div><h1 className="text-2xl font-bold text-slate-900">Settings</h1><p className="mt-1 text-sm text-slate-500">Business profile, connected services, notifications, and Fleet Agent preferences.</p></div>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm">
+        <div className="mb-5 flex items-center gap-3"><div className="rounded-xl bg-blue-50 p-2.5 text-blue-700"><Building2 className="h-5 w-5"/></div><div><h2 className="font-bold text-slate-900">Business profile</h2><p className="text-xs text-slate-500">Used across Fleet OS communications and agent context.</p></div></div>
+        <div className="grid gap-4 md:grid-cols-2">
+          {[
+            ['businessName','Business name','MOMS Mobile Oil Change'],['businessEmail','Business email','service@example.com'],['businessPhone','Business phone','(555) 555-0100'],['website','Website','https://example.com'],['address','Street address','123 Main St'],['city','City','Ambler'],['region','State / region','PA'],['postalCode','ZIP / postal code','19002']
+          ].map(([key,label,placeholder])=><label key={key} className="space-y-1.5 text-sm font-medium text-slate-700"><span>{label}</span><input value={(draft.businessProfile as any)?.[key]||''} onChange={e=>setBusiness(key,e.target.value)} placeholder={placeholder} className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"/></label>)}
+          <label className="space-y-1.5 text-sm font-medium text-slate-700 md:col-span-2"><span>Timezone</span><select value={draft.businessProfile?.timezone||'America/New_York'} onChange={e=>setBusiness('timezone',e.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm"><option value="America/New_York">Eastern Time</option><option value="America/Chicago">Central Time</option><option value="America/Denver">Mountain Time</option><option value="America/Los_Angeles">Pacific Time</option></select></label>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm">
+        <div className="mb-5 flex items-center gap-3"><div className="rounded-xl bg-violet-50 p-2.5 text-violet-700"><Bot className="h-5 w-5"/></div><div><h2 className="font-bold text-slate-900">Fleet Agent</h2><p className="text-xs text-slate-500">Controls what the agent may read and how it behaves. Consequential writes remain confirmation-gated.</p></div></div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 p-4"><div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-blue-600"/><span className="text-sm font-semibold">Response style</span></div><div className="grid grid-cols-3 gap-2">{(['Professional','Friendly','Concise'] as const).map(tone=><button key={tone} type="button" onClick={()=>setDraft(c=>({...c,personalityFocus:tone}))} className={`rounded-lg px-3 py-2 text-xs font-semibold ${draft.personalityFocus===tone?'bg-blue-600 text-white':'bg-slate-100 text-slate-700'}`}>{tone}</button>)}</div></div>
+          <Toggle label="Web research" detail="Allow Browserbase research for public company and prospect information." checked={draft.agentPreferences?.allowWebResearch??true} onChange={v=>setAgent('allowWebResearch',v)} icon={<Globe2 className="h-4 w-4"/>}/>
+          <Toggle label="NHTSA VIN decoding" detail="Allow the agent to decode VINs with NHTSA vPIC vehicle data." checked={draft.agentPreferences?.allowNhtsaVinDecode??true} onChange={v=>setAgent('allowNhtsaVinDecode',v)} icon={<ShieldCheck className="h-4 w-4"/>}/>
+          <Toggle label="Camera & OCR" detail="Allow camera scans and image text extraction for cards, documents and vehicles." checked={draft.agentPreferences?.allowCameraOcr??true} onChange={v=>setAgent('allowCameraOcr',v)} icon={<MapPin className="h-4 w-4"/>}/>
+          <Toggle label="Require confirmation for writes" detail="Email sends, scheduling, account changes and other mutations require review." checked={draft.agentPreferences?.requireConfirmationForWrites??true} onChange={v=>setAgent('requireConfirmationForWrites',v)} icon={<ShieldCheck className="h-4 w-4"/>}/>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm">
+        <div className="mb-4 flex items-center gap-3"><Mail className="h-5 w-5 text-blue-600"/><div><h2 className="font-bold text-slate-900">Connected services</h2><p className="text-xs text-slate-500">Email and calendar connections used by Fleet OS.</p></div></div>
+        <div className="divide-y divide-slate-100">
+          <div className="flex items-center justify-between gap-4 py-3"><div><p className="text-sm font-semibold">AgentMail</p><p className="text-xs text-slate-500">{settings.connectedAccounts.find(a=>a.type==='agentmail')?.email||'Organization inbox'}</p></div><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Connected</span></div>
+          <div className="flex items-center justify-between gap-4 py-3"><div className="flex items-center gap-3"><Calendar className="h-4 w-4 text-slate-500"/><div><p className="text-sm font-semibold">Google Workspace</p><p className="text-xs text-slate-500">{google?.connected?`${google.account?.email||'Google'} · Gmail + Calendar`:'Connect Gmail and Google Calendar'}</p></div></div>{google?.connected?<button disabled={googleBusy} onClick={()=>void disconnectGoogle()} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">Disconnect</button>:<a href="/api/google/oauth/start" className={`rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white ${!google?.configured?'pointer-events-none opacity-50':''}`}>Connect</a>}</div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm">
+        <div className="mb-4 flex items-center gap-2"><Bell className="h-5 w-5 text-blue-600"/><h2 className="font-bold text-slate-900">Notifications</h2></div>
+        <div className="grid gap-4 md:grid-cols-2"><Toggle label="Important emails only" detail="Reduce non-essential Fleet Inbox notifications." checked={draft.importantEmailsOnly} onChange={v=>setDraft(c=>({...c,importantEmailsOnly:v}))}/><Toggle label="Daily AI digest" detail="Receive a morning Fleet OS summary." checked={draft.dailyAIDigest} onChange={v=>setDraft(c=>({...c,dailyAIDigest:v}))}/></div>
+      </section>
+
+      <div className="flex justify-end gap-3 pb-8"><button onClick={onCancel} className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700">Cancel</button><button onClick={save} className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white">Save changes</button></div>
+    </div>
+    {saved&&<div className="fixed bottom-6 right-6 flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-xs font-semibold text-white shadow-xl"><Check className="h-4 w-4 text-emerald-400"/>Settings saved</div>}
+  </div>;
+};
+
+function Toggle({label,detail,checked,onChange,icon}:{label:string;detail:string;checked:boolean;onChange:(value:boolean)=>void;icon?:React.ReactNode}){
+  return <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 p-4"><div className="flex gap-2.5">{icon&&<span className="mt-0.5 text-slate-500">{icon}</span>}<div><p className="text-sm font-semibold text-slate-900">{label}</p><p className="mt-1 text-xs leading-relaxed text-slate-500">{detail}</p></div></div><button type="button" aria-pressed={checked} onClick={()=>onChange(!checked)} className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition ${checked?'bg-blue-600':'bg-slate-200'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition ${checked?'left-6':'left-1'}`}/></button></div>;
+}
