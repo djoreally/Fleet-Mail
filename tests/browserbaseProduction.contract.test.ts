@@ -15,7 +15,9 @@ describe('Browserbase production implementation contract', () => {
   });
 
   it('implements Browserbase Search and Fetch primitives', () => {
-    expect(browser).toContain('client().search.web');
+    // Browserbase Search currently uses the documented direct HTTP API; Fetch uses the SDK.
+    expect(browser).toContain('https://api.browserbase.com/v1/search');
+    expect(browser).toContain("'X-BB-API-Key': apiKey()");
     expect(browser).toContain('client().fetchAPI.create');
     expect(router).toContain('searchWithBrowserbase');
   });
