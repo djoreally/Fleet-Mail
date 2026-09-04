@@ -5,6 +5,7 @@ import { AGENT_SKILLS, formatAgentPlainText, redactObject, redactSensitiveData }
 import { createAgentActionProposal } from '../services/agentActions.js';
 import { planAgentTools, type AgentToolPlan } from '../services/agentToolRouter.js';
 import { executeWebCapability } from '../services/webCapabilityRouter.js';
+import { decodeVin, isValidVin, normalizeVin } from '../services/nhtsa.js';
 
 export const tenantChatRouter = Router();
 
@@ -15,6 +16,11 @@ function mailAddress(value: unknown) {
     return String(item.email || item.address || item.value || item.name || '');
   }
   return String(value || '');
+}
+
+function extractVins(text: string) {
+  const candidates = text.toUpperCase().match(/\b[A-HJ-NPR-Z0-9]{17}\b/g) || [];
+  return [...new Set(candidates.map(normalizeVin).filter(isValidVin))].slice(0, 12);
 }
 
 tenantChatRouter.post('/', async (req, res) => {
@@ -48,6 +54,18 @@ tenantChatRouter.post('/', async (req, res) => {
     }
 
     const latestUserText = String([...(Array.isArray(messages) ? messages : [])].reverse().find((message: any) => message?.role === 'user')?.content || '');
+    const emailVehicleText = [activeEmail?.text, activeEmail?.html, activeEmail?.subject].filter(Boolean).join('\n');
+    const attachmentText = attachments.map((file: any) => file.text || '').join('\n');
+    const vins = extractVins(`${latestUserText}\n${emailVehicleText}\n${attachmentText}`);
+    const nhtsaVehicles = [];
+    for (const vin of vins) {
+      try {
+        nhtsaVehicles.push(await decodeVin({ vin }));
+      } catch (error) {
+        nhtsaVehicles.push({ vin, valid: false, error: error instanceof Error ? error.message : 'VIN decode failed' });
+      }
+    }
+
     const toolPlan = (req.body?.agentToolPlan && typeof req.body.agentToolPlan === 'object'
       ? req.body.agentToolPlan
       : planAgentTools(latestUserText)) as AgentToolPlan;
@@ -58,6 +76,7 @@ tenantChatRouter.post('/', async (req, res) => {
       selectedEmail: activeEmail || null,
       recentInbox,
       fleetToolPlan: { readTools: toolPlan.readTools, webCapability: toolPlan.webCapability },
+      vehicleIntelligence: { source: 'NHTSA vPIC', decoded: nhtsaVehicles },
       web: webResult.status === 'skipped' ? null : webResult,
       attachedDocuments: attachments.filter((file: any) => file.text || file.extractionError).map((file: any) => ({
         name: file.name,
@@ -71,8 +90,9 @@ tenantChatRouter.post('/', async (req, res) => {
 Use the authenticated organization context supplied by the server. Never infer tenant identity from an inbox supplied by the user.
 Ground names, facts, deadlines, and claims in the supplied context. Clearly label assumptions and never invent search results or execution success.
 Use the user's preferred ${personality} tone. Extract action items, owners, dates, blockers, and the safest next action.
+Vehicle VIN intelligence is supplied in Authenticated Fleet context.vehicleIntelligence and comes from NHTSA vPIC. When a VIN is present, use that decoded data before claiming vehicle specs are unavailable. Do not use open-web research for VIN decoding when NHTSA data is available.
 Never emit provider commands, tool-call markup, XML-like function calls, JSON tool payloads, implementation names, or internal routing details in visible text.
-Do not narrate provider selection. Say what you are doing in user terms such as "I researched the company" or "I opened the page".
+Do not narrate provider selection. Say what you are doing in user terms such as "I researched the company" or "I decoded the VIN".
 The runtime owns web execution. You do not choose or invoke providers yourself.
 A web action succeeded only when Authenticated Fleet context.web.status is "success". If it is "failed" or "blocked", state the short user-facing reason and do not fabricate page content.
 If the user asks to find a new company, prospect, lead, or business in an area and context.web.status is "success", use the returned open-web results. Do not incorrectly claim web research is unavailable.
@@ -132,6 +152,7 @@ Authenticated Fleet context: ${JSON.stringify(groundedContext)}`;
       emailDraft,
       actionProposal,
       toolPlan: { readTools: toolPlan.readTools, webCapability: toolPlan.webCapability },
+      vehicleIntelligence: nhtsaVehicles,
       webExecution: {
         capability: webResult.capability,
         provider: webResult.provider,
@@ -145,6 +166,7 @@ Authenticated Fleet context: ${JSON.stringify(groundedContext)}`;
       skillsUsed: [
         ...AGENT_SKILLS.filter((skill: any) => typeof skill === 'string').slice(0, 0),
         'tenant-grounding', 'context-memory', 'predictive-drafting', 'grounded-recall',
+        ...(nhtsaVehicles.length ? ['nhtsa-vin-decode'] : []),
         ...(webResult.status === 'success' ? [`web:${webResult.capability}`] : []),
         'pii-redaction', 'sentinel',
       ],
