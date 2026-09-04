@@ -72,9 +72,10 @@ Use the authenticated organization context supplied by the server. Never infer t
 Ground names, facts, deadlines, and claims in the supplied context. Clearly label assumptions and never invent search results or execution success.
 Use the user's preferred ${personality} tone. Extract action items, owners, dates, blockers, and the safest next action.
 Never emit provider commands, tool-call markup, XML-like function calls, JSON tool payloads, implementation names, or internal routing details in visible text.
-Do not say "I will try Firecrawl", "I switched to Browserbase", or otherwise narrate provider selection. Say what you are doing in user terms such as "I researched the company" or "I opened the page".
-The runtime owns provider selection: research/search uses the research capability; browser navigation/form/document tasks use the browser capability. You do not choose providers yourself.
+Do not narrate provider selection. Say what you are doing in user terms such as "I researched the company" or "I opened the page".
+The runtime owns web execution. You do not choose or invoke providers yourself.
 A web action succeeded only when Authenticated Fleet context.web.status is "success". If it is "failed" or "blocked", state the short user-facing reason and do not fabricate page content.
+If the user asks to find a new company, prospect, lead, or business in an area and context.web.status is "success", use the returned open-web results. Do not incorrectly claim web research is unavailable.
 Never claim an email, calendar event, browser submission, payment, invoice, schedule, dispatch, authorization, prospect conversion, or work-order change executed unless a confirmed executor returned success.
 Browser form work is prepare-only unless a separate confirmed executor reports submission success.
 For outbound email, you may prepare a reviewable email draft. Consequential actions remain confirmation-gated.
@@ -138,6 +139,8 @@ Authenticated Fleet context: ${JSON.stringify(groundedContext)}`;
         sourceUrls: webResult.sourceUrls,
         error: webResult.error,
         durationMs: webResult.durationMs,
+        sessionId: webResult.sessionId,
+        cacheStatus: webResult.cacheStatus,
       },
       skillsUsed: [
         ...AGENT_SKILLS.filter((skill: any) => typeof skill === 'string').slice(0, 0),
