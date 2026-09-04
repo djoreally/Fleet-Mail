@@ -7,7 +7,7 @@ describe('chat document attachment contract', () => {
     const extraction = readFileSync('src/server/services/documentTextExtraction.ts', 'utf8');
     const middleware = readFileSync('src/server/services/chatAttachmentExtraction.ts', 'utf8');
     const app = readFileSync('src/server/app.ts', 'utf8');
-    expect(ui).toContain("type === 'application/pdf' || type === DOCX");
+    expect(ui).toContain("type==='application/pdf'||type===DOCX");
     expect(extraction).toContain("import('pdf-parse')");
     expect(extraction).toContain("import('mammoth')");
     expect(middleware).toContain('MAX_ATTACHMENTS = 4');
