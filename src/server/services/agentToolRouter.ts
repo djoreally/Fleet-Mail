@@ -43,12 +43,17 @@ function webCapabilityFor(source: string, text: string): AgentWebCapability {
   const documentIntent = includesAny(text, ['download ', 'download the', 'receipt', 'pdf', 'document from', 'parse the document', 'extract the pdf']);
   const browseIntent = includesAny(text, ['browse ', 'browser ', 'open the website', 'go to ', 'click ', 'log in', 'login to', 'navigate to', 'open this page'])
     || (hasUrl && /^\s*(?:open|visit|navigate|go)\b/i.test(source));
-  const researchIntent = hasUrl || includesAny(text, ['research ', 'look up online', 'search the web', 'website', 'web research', 'find companies', 'find prospects', 'search online']);
+  const explicitResearchIntent = includesAny(text, [
+    'research ', 'look up online', 'search the web', 'web research', 'find online', 'search online',
+    'find companies', 'find a company', 'find businesses', 'find a business', 'find prospects', 'find a prospect',
+    'prospecting', 'prospect for', 'companies in ', 'businesses in ', 'new company in ', 'new business in ',
+  ]);
+  const websiteResearch = hasUrl && !browseIntent && !formIntent && !documentIntent;
 
   if (formIntent) return 'form';
   if (documentIntent && hasUrl) return 'document';
   if (browseIntent) return 'browse';
-  if (researchIntent) return 'research';
+  if (explicitResearchIntent || websiteResearch) return 'research';
   return 'none';
 }
 
@@ -59,7 +64,7 @@ export function planAgentTools(userText: string): AgentToolPlan {
   const add = (...selected: AgentReadTool[]) => selected.forEach((tool) => tools.add(tool));
 
   const personIntent = includesAny(text, ['who is ', 'contact', 'email address', 'phone number', 'decision maker', 'manager', 'owner']);
-  const prospectIntent = includesAny(text, ['prospect', 'lead', 'pipeline', 'opportunity', 'qualified', 'outreach', 'follow up', 'follow-up']);
+  const prospectIntent = includesAny(text, ['prospect', 'prospecting', 'lead', 'pipeline', 'opportunity', 'qualified', 'outreach', 'follow up', 'follow-up']);
   const accountIntent = includesAny(text, ['customer', 'client', 'fleet account', 'company']);
   const locationIntent = includesAny(text, ['location', 'service address', 'billing address', 'where is', 'site ']);
   const vehicleIntent = includesAny(text, ['vehicle', 'unit ', 'vin', 'truck', 'van', 'oil filter', 'oil type', 'oil capacity', 'mileage', 'engine hours']);
