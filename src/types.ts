@@ -117,8 +117,8 @@ export interface PersonalizationSettings {
   importantEmailsOnly: boolean;
   dailyAIDigest: boolean;
   connectedAccounts: ConnectedAccount[];
-  businessProfile: BusinessProfileSettings;
-  agentPreferences: AgentPreferenceSettings;
+  businessProfile?: BusinessProfileSettings;
+  agentPreferences?: AgentPreferenceSettings;
 }
 
 export interface ConnectedAccount {
