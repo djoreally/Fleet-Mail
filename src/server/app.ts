@@ -2,6 +2,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { apiRouter } from './routes/api.js';
 import { googleRouter } from './routes/google.js';
 import { agentmailCrudRouter } from './routes/agentmailCrud.js';
+import { agentMailAttachmentsRouter } from './routes/agentMailAttachments.js';
 import { agentActionsRouter } from './routes/agentActions.js';
 import { operationsRouter } from './routes/operations.js';
 import { customerPartsRouter } from './routes/customerParts.js';
@@ -105,6 +106,7 @@ export function createApp() {
   app.use('/api/chat', tenantChatRouter);
 
   app.use('/api', dashboardRouter);
+  app.use('/api', agentMailAttachmentsRouter);
   app.use('/api', apiRouter);
   app.use('/api', vehicle360Router);
   app.use('/api/google', googleRouter);
