@@ -32,6 +32,7 @@
     "@tailwindcss/vite": "^4.1.14",
     "@types/canvas-confetti": "^1.9.0",
     "@vitejs/plugin-react": "^5.0.4",
+    "adm-zip": "^0.5.16",
     "agentmail": "^0.5.20",
     "canvas-confetti": "^1.9.4",
     "dotenv": "^17.2.3",
@@ -49,6 +50,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
