@@ -45,15 +45,8 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   chips?: string[];
-  calendarInvite?: {
-    title: string;
-    time: string;
-  };
-  emailDraft?: {
-    to: string;
-    subject: string;
-    body: string;
-  };
+  calendarInvite?: { title: string; time: string };
+  emailDraft?: { to: string; subject: string; body: string };
   emailSummary?: EmailSummary;
   actionProposal?: AgentActionProposal;
   isStreaming?: boolean;
@@ -100,11 +93,32 @@ export interface SendEmailPayload {
   html?: string;
 }
 
+export interface BusinessProfileSettings {
+  businessName: string;
+  businessEmail: string;
+  businessPhone: string;
+  website: string;
+  address: string;
+  city: string;
+  region: string;
+  postalCode: string;
+  timezone: string;
+}
+
+export interface AgentPreferenceSettings {
+  allowWebResearch: boolean;
+  allowNhtsaVinDecode: boolean;
+  allowCameraOcr: boolean;
+  requireConfirmationForWrites: boolean;
+}
+
 export interface PersonalizationSettings {
   personalityFocus: 'Professional' | 'Friendly' | 'Concise';
   importantEmailsOnly: boolean;
   dailyAIDigest: boolean;
   connectedAccounts: ConnectedAccount[];
+  businessProfile: BusinessProfileSettings;
+  agentPreferences: AgentPreferenceSettings;
 }
 
 export interface ConnectedAccount {
