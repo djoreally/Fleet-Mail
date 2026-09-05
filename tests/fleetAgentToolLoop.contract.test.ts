@@ -9,17 +9,22 @@ const ledgerSearch = readFileSync('src/server/services/fleetAuditSearch.ts', 'ut
 
 describe('Fleet Agent bounded tool loop contract', () => {
   it('supports structured model tool calls and feeds tool results back into the conversation', () => {
-    expect(ai).toContain('tool_calls');
-    expect(ai).toContain('tool_choice');
+    expect(ai).toContain("type: 'tool_use'");
+    expect(ai).toContain("type: 'tool_result'");
+    expect(ai).toContain('tool_use_id');
     expect(loop).toContain('MAX_TOOL_ROUNDS = 5');
     expect(loop).toContain("role: 'tool'");
     expect(loop).toContain('tool_call_id');
     expect(loop).toContain('for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1)');
   });
 
-  it('uses a dedicated AtlasCloud model for tool-capable turns', () => {
+  it('uses AtlasCloud Anthropic Messages for tool-capable turns and keeps ordinary chat separate', () => {
     expect(config).toContain("atlasCloudToolModel: process.env.ATLASCLOUD_TOOL_MODEL || 'deepseek-ai/deepseek-v3.2'");
-    expect(ai).toContain('tools.length ? serverConfig.atlasCloudToolModel : serverConfig.atlasCloudModel');
+    expect(ai).toContain("`${serverConfig.atlasCloudBaseUrl}/messages`");
+    expect(ai).toContain("'anthropic-version': '2023-06-01'");
+    expect(ai).toContain('input_schema: tool.function.parameters');
+    expect(ai).toContain("`${serverConfig.atlasCloudBaseUrl}/chat/completions`");
+    expect(ai).toContain('if (tools.length || hasToolHistory)');
   });
 
   it('keeps Fleet reads tenant-scoped through existing server-owned services', () => {
@@ -34,8 +39,8 @@ describe('Fleet Agent bounded tool loop contract', () => {
   });
 
   it('exposes fuzzy Fleet knowledge and the durable change ledger as first-class read tools', () => {
-    expect(loop).toContain("name: 'search_fleet_knowledge'");
-    expect(loop).toContain("name: 'search_change_ledger'");
+    expect(loop).toContain("queryTool('search_fleet_knowledge'");
+    expect(loop).toContain("queryTool('search_change_ledger'");
     expect(loop).toContain('Fuzzy-search the tenant Fleet knowledge directory');
     expect(ledgerSearch).toContain("source: 'audit_events'");
   });
