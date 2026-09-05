@@ -10,6 +10,7 @@ export type AgentActionKind =
 
 export interface AgentActionProposal {
   id: string;
+  organizationId?: string;
   kind: AgentActionKind;
   summary: string;
   payload: Record<string, unknown>;
@@ -108,16 +109,23 @@ export function normalizeAgentAction(kind: unknown, raw: unknown): { kind: Agent
   throw new Error('Unsupported agent action');
 }
 
-export function createAgentActionProposal(kind: unknown, payload: unknown) {
+export function createAgentActionProposal(kind: unknown, payload: unknown, organizationId?: string) {
   const normalized = normalizeAgentAction(kind, payload);
+  const scopedOrganizationId = organizationId ? requiredText(organizationId, 'Fleet organization', 100) : undefined;
   const now = Date.now();
-  const proposal: AgentActionProposal = { id: crypto.randomUUID(), ...normalized, createdAt: new Date(now).toISOString(), expiresAt: new Date(now + 10 * 60_000).toISOString() };
+  const proposal: AgentActionProposal = {
+    id: crypto.randomUUID(),
+    ...(scopedOrganizationId ? { organizationId: scopedOrganizationId } : {}),
+    ...normalized,
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + 10 * 60_000).toISOString(),
+  };
   const encoded = Buffer.from(JSON.stringify(proposal)).toString('base64url');
   const signature = crypto.createHmac('sha256', signingKey()).update(encoded).digest('base64url');
   return { proposal, confirmationToken: `${encoded}.${signature}` };
 }
 
-export function verifyAgentActionProposal(token: unknown): AgentActionProposal {
+export function verifyAgentActionProposal(token: unknown, expectedOrganizationId?: string): AgentActionProposal {
   const [encoded, signature] = String(token || '').split('.');
   if (!encoded || !signature) throw new Error('A valid confirmation token is required');
   const expected = crypto.createHmac('sha256', signingKey()).update(encoded).digest();
@@ -125,6 +133,12 @@ export function verifyAgentActionProposal(token: unknown): AgentActionProposal {
   if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) throw new Error('The action proposal was changed');
   const proposal = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as AgentActionProposal;
   if (new Date(proposal.expiresAt).getTime() < Date.now()) throw new Error('The action proposal expired; review it again');
+  if (expectedOrganizationId) {
+    const expectedOrg = requiredText(expectedOrganizationId, 'Fleet organization', 100);
+    if (!proposal.organizationId || proposal.organizationId !== expectedOrg) {
+      throw new Error('The action proposal does not belong to this Fleet organization');
+    }
+  }
   const validationPayload = proposal.kind === 'calendar.create' ? {
     ...proposal.payload,
     start: (proposal.payload.start as any)?.dateTime,

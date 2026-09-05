@@ -11,6 +11,7 @@ const MIGRATIONS = [
   '0003_operational_chain.sql',
   '0004_prospecting_foundation.sql',
   '0005_team_invitations.sql',
+  '0006_agent_action_executions.sql',
 ] as const;
 
 export async function runDrizzleMigration(customDatabaseUrl?: string, options: { allowRuntime?: boolean } = {}): Promise<MigrationReport> {

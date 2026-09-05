@@ -10,7 +10,7 @@ const FLEET_ACTION_POLICY = `Fleet OS agent tool policy.
 
 Live reads are organization-scoped and may be used directly when present in the trusted runtime results below.
 All writes are proposals only. Never claim a record, email, calendar event, browser interaction, payment, invoice, schedule, dispatch, inspection, authorization, prospect conversion, or work order was created or changed until the confirmation-gated executor returns success.
-Browserbase is explicit-action-only. Never use Browserbase as a research fallback. Firecrawl is the research tool. A browser-mode plan describes intent only and does not authorize execution.
+Browserbase Search/Fetch is the primary public-web research path. Stagehand/Browserbase browser sessions are used for interactive browser work. Firecrawl is compatibility fallback only when Browserbase research is unavailable. A browser-mode plan describes intent only and does not authorize execution.
 
 Supported confirmation-gated actions:
 - email.send

@@ -6,6 +6,7 @@ import { createAgentActionProposal } from '../services/agentActions.js';
 import { planAgentTools, type AgentToolPlan } from '../services/agentToolRouter.js';
 import { executeWebCapability } from '../services/webCapabilityRouter.js';
 import { decodeVin, isValidVin, normalizeVin } from '../services/nhtsa.js';
+import { requireFleetOrganization } from '../services/fleetAuth.js';
 
 export const tenantChatRouter = Router();
 
@@ -27,6 +28,7 @@ tenantChatRouter.post('/', async (req, res) => {
   try {
     const activeInbox = String(res.locals.agentMailInbox || '').trim();
     if (!activeInbox) return res.status(401).json({ error: 'A verified organization-scoped AgentMail inbox is required' });
+    const organizationId = await requireFleetOrganization(req);
 
     const { messages, activeEmail, personality = 'Professional' } = req.body;
     const rawAttachments = Array.isArray(req.body?.attachments) ? req.body.attachments.slice(0, 4) : [];
@@ -139,7 +141,7 @@ Authenticated Fleet context: ${JSON.stringify(groundedContext)}`;
     if (actionMatch) {
       try {
         const action = JSON.parse(actionMatch[1]);
-        actionProposal = createAgentActionProposal(action.kind, action.payload);
+        actionProposal = createAgentActionProposal(action.kind, action.payload, organizationId);
       } catch (error) {
         console.warn('Ignored invalid agent action proposal:', error instanceof Error ? error.message : error);
       }
