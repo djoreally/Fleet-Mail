@@ -5,12 +5,17 @@ import { searchAgentOperationalContext } from './agentRuntimeOperations.js';
 import { planAgentTools } from './agentToolRouter.js';
 import { maintenanceIntelligenceService } from './maintenanceIntelligence.js';
 import { financialReadModelService } from './financialReadModel.js';
+import { getFleetKnowledgeContext } from './fleetKnowledge.js';
 
-const FLEET_ACTION_POLICY = `Fleet OS agent tool policy.
+const FLEET_ACTION_POLICY = `Fleet OS agent data and action policy.
+
+You DO have controlled access to this organization's Fleet data through the Fleet Knowledge Layer and deterministic server-owned read tools. Never say you lack a search function, database access, or access to contacts/prospects/fleet accounts when Fleet Knowledge context is present. If nothing matches, say that no matching organization-scoped record was found and ask only for the minimum clarification needed.
+The model never receives raw SQL, database credentials, or unrestricted table access. Use canonical records and IDs supplied by trusted middleware.
+Fleet Knowledge is a cached organization-scoped directory and recent-change ledger. Matching can be fuzzy, so treat high-scoring name matches as candidates and state ambiguity when more than one plausible record exists. Deterministic live tools provide deeper task-specific detail when selected.
 
 Live reads are organization-scoped and may be used directly when present in the trusted runtime results below.
 All writes are proposals only. Never claim a record, email, calendar event, browser interaction, payment, invoice, schedule, dispatch, inspection, authorization, prospect conversion, or work order was created or changed until the confirmation-gated executor returns success.
-Browserbase Search/Fetch is the primary public-web research path. Stagehand/Browserbase browser sessions are used for interactive browser work. Firecrawl is compatibility fallback only when Browserbase research is unavailable. A browser-mode plan describes intent only and does not authorize execution.
+Browserbase Search is the primary discovery path for public-web research. Browserbase Fetch is the lightweight page-retrieval path. Stagehand/Browserbase browser sessions are used for interactive or JavaScript-heavy browser work. Browserbase Functions may back reusable browser automations. Firecrawl is compatibility fallback only when Browserbase research is unavailable. A browser-mode plan describes intent only and does not authorize execution.
 
 Supported confirmation-gated actions:
 - email.send
@@ -48,26 +53,33 @@ export async function fleetAgentRuntimeMiddleware(req: Request, res: Response, n
     const latestUserText = String(messages[latestUserIndex]?.content || '');
     const toolPlan = planAgentTools(latestUserText);
     req.body.agentToolPlan = toolPlan;
-
-    if (!toolPlan.readTools.length) return next();
-
     const organizationId = await requireFleetOrganization(req);
-    const wantsFinancialDashboard = toolPlan.readTools.some((tool) => ['financials.search', 'financials.summary', 'invoices.search', 'payments.search'].includes(tool));
-    const [coreRuntime, operations, maintenance, financials] = await Promise.all([
-      searchAgentRuntimeContext(organizationId, latestUserText),
-      searchAgentOperationalContext(organizationId, latestUserText, toolPlan.readTools),
-      toolPlan.readTools.includes('maintenance.search') ? maintenanceIntelligenceService.attention(organizationId) : Promise.resolve(null),
-      wantsFinancialDashboard ? financialReadModelService.dashboard(organizationId) : Promise.resolve(null),
-    ]);
-    const runtime = { ...coreRuntime, operations, maintenanceIntelligence: maintenance, financials };
-    const hasCoreMatches = Object.values(coreRuntime.fleet || {}).some((value) => Array.isArray(value) && value.length > 0);
-    const hasOperationalMatches = Object.values(operations).some((value) => Array.isArray(value) && value.length > 0);
-    const hasRuntimeMatches = hasCoreMatches || hasOperationalMatches || coreRuntime.emails.length > 0 || Boolean(maintenance) || Boolean(financials);
-    const selectedTools = toolPlan.readTools.join(', ');
 
-    const runtimeContext = hasRuntimeMatches
-      ? `\n\nTrusted Fleet OS tool results for the latest request. The deterministic router selected: ${selectedTools}. These results are live and organization-scoped. Use matching records before saying data is unavailable. If multiple records match, explain the ambiguity.\n${JSON.stringify(runtime)}`
-      : `\n\nThe deterministic Fleet tool router selected: ${selectedTools}. No matching live Fleet or AgentMail records were found for the latest request. Do not invent a record or identifier.`;
+    const knowledgePromise = getFleetKnowledgeContext(organizationId, latestUserText);
+    const wantsFinancialDashboard = toolPlan.readTools.some((tool) => ['financials.search', 'financials.summary', 'invoices.search', 'payments.search'].includes(tool));
+    const livePromise = toolPlan.readTools.length
+      ? Promise.all([
+          searchAgentRuntimeContext(organizationId, latestUserText),
+          searchAgentOperationalContext(organizationId, latestUserText, toolPlan.readTools),
+          toolPlan.readTools.includes('maintenance.search') ? maintenanceIntelligenceService.attention(organizationId) : Promise.resolve(null),
+          wantsFinancialDashboard ? financialReadModelService.dashboard(organizationId) : Promise.resolve(null),
+        ])
+      : Promise.resolve([null, null, null, null] as const);
+
+    const [knowledge, live] = await Promise.all([knowledgePromise, livePromise]);
+    const [coreRuntime, operations, maintenance, financials] = live;
+    const runtime = coreRuntime ? { ...coreRuntime, operations, maintenanceIntelligence: maintenance, financials } : null;
+    const hasCoreMatches = coreRuntime ? Object.values(coreRuntime.fleet || {}).some((value) => Array.isArray(value) && value.length > 0) : false;
+    const hasOperationalMatches = operations ? Object.values(operations).some((value) => Array.isArray(value) && value.length > 0) : false;
+    const hasRuntimeMatches = hasCoreMatches || hasOperationalMatches || Boolean(coreRuntime?.emails?.length) || Boolean(maintenance) || Boolean(financials);
+    const selectedTools = toolPlan.readTools.join(', ') || 'none';
+
+    const runtimeContext = `\n\nTrusted Fleet Knowledge Layer for the latest request. This is organization-scoped, server-controlled context and may be used directly. Cache state: ${knowledge.cache}. Domain counts describe the currently loaded tenant directory. Fuzzy matches are candidates, not permission grants.\n${JSON.stringify(knowledge)}`
+      + (hasRuntimeMatches
+        ? `\n\nTrusted live Fleet OS tool results. The deterministic router selected: ${selectedTools}. Use matching records before saying data is unavailable. If multiple records match, explain the ambiguity.\n${JSON.stringify(runtime)}`
+        : toolPlan.readTools.length
+          ? `\n\nThe deterministic Fleet tool router selected: ${selectedTools}. No deeper live records matched. Do not treat that as absence from Fleet Knowledge and do not invent a record or identifier.`
+          : '');
 
     req.body.messages = [
       ...messages.slice(0, latestUserIndex),

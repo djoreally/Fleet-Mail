@@ -23,6 +23,7 @@ import { teamRouter } from './routes/team.js';
 import { prospectWebhookService, verifyAgentMailWebhook } from './services/prospectWebhook.js';
 import { fleetAgentRuntimeMiddleware } from './services/fleetAgentRuntime.js';
 import { chatAttachmentExtractionMiddleware } from './services/chatAttachmentExtraction.js';
+import { fleetMutationLedgerMiddleware } from './services/fleetMutationLedger.js';
 import { fleetAuthFailure, getFleetAccessContext, requireFleetOrganization, requireFleetPermission } from './services/fleetAuth.js';
 import { enforceAgentMailInboxScope, resolveOrganizationAgentMailInbox } from './services/agentMailTenantBoundary.js';
 import { serverConfig } from './config.js';
@@ -38,7 +39,7 @@ export function createApp() {
     try { const payload = JSON.parse(raw.toString('utf8')); const result = await prospectWebhookService.handle(payload); return res.status(200).json({ accepted: true, ...result }); }
     catch (error) { console.error('AgentMail webhook processing failed', error instanceof Error ? error.message : error); return res.status(500).json({ error: 'webhook_processing_failed' }); }
   });
-  app.use(express.json({ limit: '10mb' })); app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ limit: '10mb' })); app.use(express.urlencoded({ extended: true })); app.use(fleetMutationLedgerMiddleware);
   app.get('/api/status', async (req, res) => {
     const atlasKey = process.env.ATLASCLOUD_API_KEY; const agentKey = process.env.AGENTMAIL_API_KEY;
     const status: Record<string, unknown> = { atlasCloudConfigured:Boolean(atlasKey&&atlasKey!=='your-atlascloud-api-key'&&atlasKey.trim()!==''),agentMailConfigured:Boolean(agentKey&&agentKey!=='your-agentmail-api-key'&&agentKey.trim()!==''),neonConfigured:Boolean(serverConfig.neonDataApiUrl&&serverConfig.neonAuthUrl),googleConfigured:Boolean(process.env.GOOGLE_CLIENT_ID&&process.env.GOOGLE_CLIENT_SECRET&&process.env.GOOGLE_TOKEN_ENCRYPTION_KEY),firecrawlConfigured:Boolean(process.env.FIRECRAWL_API_KEY?.trim()),browserbaseConfigured:Boolean(process.env.BROWSERBASE_API_KEY?.trim()) };
