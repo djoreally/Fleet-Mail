@@ -43,12 +43,31 @@ const mutationToolMap: Record<string, string> = {
   transition_work_order: 'fleet.work_order.transition',
   decide_authorization: 'fleet.authorization.decision',
   convert_prospect: 'fleet.prospect.convert',
+  create_fleet_account: 'fleet.account.create',
+  create_fleet_contact: 'fleet.contact.create',
+  add_fleet_vehicle: 'fleet.vehicle.create',
+  onboard_fleet_customer: 'fleet.customer.onboard',
 };
 
 const queryTool = (name: string, description: string): AIToolDefinition => ({
   type: 'function',
   function: { name, description, parameters: objectSchema({ query: textProp('What to search for in this Fleet organization.') }, ['query']) },
 });
+
+const contactSchema = objectSchema({
+  name: textProp('Contact name'), email: textProp('Optional contact email'), phone: textProp('Optional contact phone'),
+  role: textProp('Optional role/title'), notes: textProp('Optional notes'), isPrimary: { type: 'boolean', description: 'Whether this is the primary Fleet contact' },
+}, ['name']);
+const vehicleSchema = objectSchema({
+  unitNumber: textProp('Vehicle unit number'), vin: textProp('Optional 17-character VIN'), year: numberProp('Optional model year'),
+  make: textProp('Optional make'), model: textProp('Optional model'), engine: textProp('Optional engine'), mileage: numberProp('Optional mileage'),
+  engineHours: numberProp('Optional engine hours'), licensePlate: textProp('Optional license plate'), registrationState: textProp('Optional registration state'),
+  assignedDriver: textProp('Optional assigned driver'), department: textProp('Optional department'), notes: textProp('Optional notes'),
+}, ['unitNumber']);
+const accountSchema = objectSchema({
+  name: textProp('Fleet account/company name'), accountNumber: textProp('Optional account number'), primaryContactName: textProp('Optional primary contact name'),
+  primaryContactEmail: textProp('Optional primary contact email'), phone: textProp('Optional phone'), notes: textProp('Optional notes'),
+}, ['name']);
 
 export const FLEET_AGENT_TOOLS: AIToolDefinition[] = [
   queryTool('search_fleet_knowledge', 'Fuzzy-search the tenant Fleet knowledge directory across accounts, contacts, prospects, team, technicians, vehicles, and work orders. Use this first when a name or identifier may be misspelled or ambiguous.'),
@@ -82,6 +101,10 @@ export const FLEET_AGENT_TOOLS: AIToolDefinition[] = [
   { type: 'function', function: { name: 'transition_work_order', description: 'Prepare a work-order status transition for explicit confirmation.', parameters: objectSchema({ workOrderId: textProp('Canonical tenant work-order ID'), status: textProp('Target status') }, ['workOrderId','status']) } },
   { type: 'function', function: { name: 'decide_authorization', description: 'Prepare an authorization decision for explicit confirmation.', parameters: objectSchema({ authorizationId: textProp('Canonical tenant authorization ID'), decision: { type: 'string', enum: ['authorized','rejected'] }, authorizedBy: textProp('Optional authorizer'), authorizationMethod: textProp('Optional authorization method'), purchaseOrderNumber: textProp('Optional PO number'), notes: textProp('Optional decision notes') }, ['authorizationId','decision']) } },
   { type: 'function', function: { name: 'convert_prospect', description: 'Prepare conversion of a tenant prospect to a fleet account for explicit confirmation.', parameters: objectSchema({ prospectId: textProp('Canonical tenant prospect ID') }, ['prospectId']) } },
+  { type: 'function', function: { name: 'create_fleet_account', description: 'Prepare creation of a Fleet Account for explicit confirmation. Search first to avoid duplicates.', parameters: accountSchema } },
+  { type: 'function', function: { name: 'create_fleet_contact', description: 'Prepare a contact linked to an existing Fleet Account for explicit confirmation. Use the canonical customer ID from search.', parameters: objectSchema({ customerId: textProp('Canonical Fleet Account/customer ID'), ...contactSchema.properties }, ['customerId','name']) } },
+  { type: 'function', function: { name: 'add_fleet_vehicle', description: 'Prepare a vehicle linked to an existing Fleet Account for explicit confirmation. Use the canonical customer ID from search.', parameters: objectSchema({ customerId: textProp('Canonical Fleet Account/customer ID'), ...vehicleSchema.properties }, ['customerId','unitNumber']) } },
+  { type: 'function', function: { name: 'onboard_fleet_customer', description: 'Prepare one reviewed onboarding transaction that creates or reuses a Fleet Account, links a contact, and adds or links vehicles. Use this when the user approves account/contact/vehicle changes together.', parameters: objectSchema({ customerId: textProp('Optional canonical existing Fleet Account/customer ID'), account: accountSchema, contact: contactSchema, vehicles: { type: 'array', maxItems: 50, items: vehicleSchema } }, ['account']) } },
 ];
 
 function parseArguments(call: AIToolCall) {
@@ -102,12 +125,8 @@ type ReadExecution = { success: boolean; data?: unknown; error?: string; webExec
 async function executeReadTool(organizationId: string, name: string, args: Record<string, unknown>, fallbackQuery: string): Promise<ReadExecution> {
   const query = String(args.query || fallbackQuery || '').trim();
 
-  if (name === 'search_fleet_knowledge') {
-    return { success: true, data: await getFleetKnowledgeContext(organizationId, query) };
-  }
-  if (name === 'search_change_ledger') {
-    return { success: true, data: await searchFleetChangeLedger(organizationId, query) };
-  }
+  if (name === 'search_fleet_knowledge') return { success: true, data: await getFleetKnowledgeContext(organizationId, query) };
+  if (name === 'search_change_ledger') return { success: true, data: await searchFleetChangeLedger(organizationId, query) };
   if (name === 'decode_vin') {
     const vin = normalizeVin(String(args.vin || ''));
     if (!isValidVin(vin)) return { success: false, error: 'A valid 17-character VIN is required.' };
@@ -116,29 +135,20 @@ async function executeReadTool(organizationId: string, name: string, args: Recor
 
   if (['research_web','browse_web','read_web_document','prepare_web_form'].includes(name)) {
     const capability: AgentWebCapability = name === 'research_web' ? 'research' : name === 'browse_web' ? 'browse' : name === 'read_web_document' ? 'document' : 'form';
-    const source = name === 'research_web'
-      ? String(args.query || fallbackQuery)
-      : `${String(args.url || '')}\n${String(args.instruction || '')}`.trim();
+    const source = name === 'research_web' ? String(args.query || fallbackQuery) : `${String(args.url || '')}\n${String(args.instruction || '')}`.trim();
     const result = await executeWebCapability(source, planForWeb(capability));
     return { success: result.status === 'success', data: result, error: result.status === 'success' ? undefined : result.error || `Web ${result.status}`, webExecution: result };
   }
 
   const selected = readToolMap[name];
   if (!selected) return { success: false, error: `Unsupported read tool: ${name}` };
-
-  if (selected === 'financials.summary') {
-    return { success: true, data: await financialReadModelService.dashboard(organizationId) };
-  }
-
+  if (selected === 'financials.summary') return { success: true, data: await financialReadModelService.dashboard(organizationId) };
   if (['locations.search','schedule.search','dispatch.search','inspections.search','authorizations.search','financials.search','invoices.search','payments.search','documents.search'].includes(selected)) {
     return { success: true, data: await searchAgentOperationalContext(organizationId, query, [selected]) };
   }
 
   const core = await searchAgentRuntimeContext(organizationId, query);
-  if (selected === 'maintenance.search') {
-    return { success: true, data: { matches: core.fleet?.maintenance || [], attention: await maintenanceIntelligenceService.attention(organizationId) } };
-  }
-
+  if (selected === 'maintenance.search') return { success: true, data: { matches: core.fleet?.maintenance || [], attention: await maintenanceIntelligenceService.attention(organizationId) } };
   const pick: Partial<Record<AgentReadTool, unknown>> = {
     'prospects.search': core.fleet?.prospects || [],
     'prospectActivity.search': core.fleet?.prospectActivity || [],
@@ -161,12 +171,14 @@ export interface FleetAgentLoopResult {
   rounds: number;
 }
 
-export async function runFleetAgentToolLoop(input: {
-  organizationId: string;
-  messages: AIMessage[];
-  systemPrompt: string;
-  latestUserText: string;
-}): Promise<FleetAgentLoopResult> {
+function visibleContent(content: string, actionProposal: FleetAgentLoopResult['actionProposal']) {
+  const trimmed = String(content || '').trim();
+  if (trimmed) return trimmed;
+  if (actionProposal) return `${actionProposal.proposal.summary} is ready for your confirmation.`;
+  return 'I completed the lookup but did not receive a usable display response. Nothing was changed.';
+}
+
+export async function runFleetAgentToolLoop(input: { organizationId: string; messages: AIMessage[]; systemPrompt: string; latestUserText: string }): Promise<FleetAgentLoopResult> {
   const history: AIMessage[] = [...input.messages];
   const toolTrace: FleetAgentLoopResult['toolTrace'] = [];
   let actionProposal: FleetAgentLoopResult['actionProposal'] = null;
@@ -178,14 +190,10 @@ export async function runFleetAgentToolLoop(input: {
     const completion = await callAICompletion(history, input.systemPrompt, { tools: FLEET_AGENT_TOOLS, toolChoice: 'auto', temperature: 0.2 });
     lastModel = completion.model;
     lastProvider = completion.provider;
-
-    if (!completion.toolCalls.length) {
-      return { content: completion.content, model: lastModel, provider: lastProvider, actionProposal, toolTrace, webExecution, rounds: round + 1 };
-    }
+    if (!completion.toolCalls.length) return { content: visibleContent(completion.content, actionProposal), model: lastModel, provider: lastProvider, actionProposal, toolTrace, webExecution, rounds: round + 1 };
 
     history.push({ role: 'assistant', content: completion.content || '', tool_calls: completion.toolCalls });
     let mutationRequested = false;
-
     for (const call of completion.toolCalls) {
       const args = parseArguments(call);
       const mutationKind = mutationToolMap[call.function.name];
@@ -202,11 +210,10 @@ export async function runFleetAgentToolLoop(input: {
           }
         } else {
           toolTrace.push({ name: call.function.name, success: false, confirmationRequired: true });
-          history.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ success: false, error: 'Only one consequential action may be prepared per assistant turn.' }) });
+          history.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ success: false, error: 'Only one consequential action may be prepared per assistant turn. Use onboard_fleet_customer when account, contact, and vehicle changes belong in one reviewed transaction.' }) });
         }
         continue;
       }
-
       try {
         const result = await executeReadTool(input.organizationId, call.function.name, args, input.latestUserText);
         if (result.webExecution) webExecution = result.webExecution;
@@ -220,10 +227,10 @@ export async function runFleetAgentToolLoop(input: {
 
     if (mutationRequested) {
       const final = await callAICompletion(history, `${input.systemPrompt}\n\nA consequential action has been prepared but NOT executed. Tell the user what is ready for confirmation. Do not claim it happened.`, { toolChoice: 'none', temperature: 0.2 });
-      return { content: final.content, model: final.model, provider: final.provider, actionProposal, toolTrace, webExecution, rounds: round + 1 };
+      return { content: visibleContent(final.content, actionProposal), model: final.model, provider: final.provider, actionProposal, toolTrace, webExecution, rounds: round + 1 };
     }
   }
 
   const final = await callAICompletion(history, `${input.systemPrompt}\n\nThe bounded five-round tool limit has been reached. Answer using only the verified tool results already present. Do not request another tool.`, { toolChoice: 'none', temperature: 0.2 });
-  return { content: final.content, model: final.model, provider: final.provider, actionProposal, toolTrace, webExecution, rounds: MAX_TOOL_ROUNDS };
+  return { content: visibleContent(final.content, actionProposal), model: final.model, provider: final.provider, actionProposal, toolTrace, webExecution, rounds: MAX_TOOL_ROUNDS };
 }

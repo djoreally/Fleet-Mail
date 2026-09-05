@@ -6,7 +6,11 @@ export type AgentActionKind =
   | 'fleet.work_order.create'
   | 'fleet.work_order.transition'
   | 'fleet.authorization.decision'
-  | 'fleet.prospect.convert';
+  | 'fleet.prospect.convert'
+  | 'fleet.account.create'
+  | 'fleet.contact.create'
+  | 'fleet.vehicle.create'
+  | 'fleet.customer.onboard';
 
 export interface AgentActionProposal {
   id: string;
@@ -39,6 +43,11 @@ function email(value: unknown) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) throw new Error('Recipient must be a valid email address');
   return text;
 }
+function optionalEmail(value: unknown) {
+  const text = optionalText(value, 320);
+  if (text && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) throw new Error('Email must be a valid email address');
+  return text;
+}
 function isoDate(value: unknown, name: string) {
   const text = requiredText(value, name, 64);
   const date = new Date(text);
@@ -51,9 +60,43 @@ function optionalNumber(value: unknown, name: string) {
   if (!Number.isFinite(number) || number < 0) throw new Error(`${name} must be zero or greater`);
   return number;
 }
+function optionalInteger(value: unknown, name: string) {
+  const number = optionalNumber(value, name);
+  if (number === undefined) return undefined;
+  if (!Number.isInteger(number)) throw new Error(`${name} must be a whole number`);
+  return number;
+}
+function bool(value: unknown, fallback = false) {
+  if (value === undefined || value === null || value === '') return fallback;
+  return value === true || value === 'true' || value === '1';
+}
+function object(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+function vehiclePayload(value: unknown, requireCustomer = true) {
+  const source = object(value);
+  const vin = optionalText(source.vin, 17)?.toUpperCase();
+  if (vin && !/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) throw new Error('VIN must be 17 characters and cannot contain I, O, or Q');
+  return {
+    ...(requireCustomer ? { customerId: requiredText(source.customerId, 'Fleet account', 100) } : {}),
+    unitNumber: requiredText(source.unitNumber, 'Vehicle unit number', 100),
+    vin,
+    year: optionalInteger(source.year, 'Vehicle year'),
+    make: optionalText(source.make, 100),
+    model: optionalText(source.model, 100),
+    engine: optionalText(source.engine, 160),
+    mileage: optionalInteger(source.mileage, 'Mileage'),
+    engineHours: optionalInteger(source.engineHours, 'Engine hours'),
+    licensePlate: optionalText(source.licensePlate, 50),
+    registrationState: optionalText(source.registrationState, 30),
+    assignedDriver: optionalText(source.assignedDriver, 160),
+    department: optionalText(source.department, 120),
+    notes: optionalText(source.notes, 2_000),
+  };
+}
 
 export function normalizeAgentAction(kind: unknown, raw: unknown): { kind: AgentActionKind; payload: Record<string, unknown>; summary: string } {
-  const source = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const source = object(raw);
   if (kind === 'email.send') {
     const payload = {
       to: email(source.to),
@@ -105,6 +148,61 @@ export function normalizeAgentAction(kind: unknown, raw: unknown): { kind: Agent
   if (kind === 'fleet.prospect.convert') {
     const payload = { prospectId: requiredText(source.prospectId, 'Prospect', 100) };
     return { kind, payload, summary: `Convert prospect ${payload.prospectId} into a Fleet Account` };
+  }
+  if (kind === 'fleet.account.create') {
+    const payload = {
+      name: requiredText(source.name, 'Fleet account name', 300),
+      accountNumber: optionalText(source.accountNumber, 80),
+      primaryContactName: optionalText(source.primaryContactName, 200),
+      primaryContactEmail: optionalEmail(source.primaryContactEmail),
+      phone: optionalText(source.phone, 50),
+      notes: optionalText(source.notes, 2_000),
+    };
+    return { kind, payload, summary: `Add ${payload.name} as a Fleet Account` };
+  }
+  if (kind === 'fleet.contact.create') {
+    const payload = {
+      customerId: requiredText(source.customerId, 'Fleet account', 100),
+      name: requiredText(source.name, 'Contact name', 300),
+      email: optionalEmail(source.email),
+      phone: optionalText(source.phone, 50),
+      role: optionalText(source.role, 120),
+      notes: optionalText(source.notes, 2_000),
+      isPrimary: bool(source.isPrimary, true),
+    };
+    return { kind, payload, summary: `Add ${payload.name} as a Fleet contact` };
+  }
+  if (kind === 'fleet.vehicle.create') {
+    const payload = vehiclePayload(source, true);
+    return { kind, payload, summary: `Add vehicle ${payload.unitNumber} to Fleet account ${payload.customerId}` };
+  }
+  if (kind === 'fleet.customer.onboard') {
+    const accountSource = object(source.account);
+    const contactSource = source.contact ? object(source.contact) : null;
+    const vehicles = Array.isArray(source.vehicles) ? source.vehicles.slice(0, 50).map(item => vehiclePayload(item, false)) : [];
+    const payload = {
+      customerId: optionalText(source.customerId, 100),
+      account: {
+        name: requiredText(accountSource.name, 'Fleet account name', 300),
+        accountNumber: optionalText(accountSource.accountNumber, 80),
+        primaryContactName: optionalText(accountSource.primaryContactName, 200),
+        primaryContactEmail: optionalEmail(accountSource.primaryContactEmail),
+        phone: optionalText(accountSource.phone, 50),
+        notes: optionalText(accountSource.notes, 2_000),
+      },
+      contact: contactSource ? {
+        name: requiredText(contactSource.name, 'Contact name', 300),
+        email: optionalEmail(contactSource.email),
+        phone: optionalText(contactSource.phone, 50),
+        role: optionalText(contactSource.role, 120),
+        notes: optionalText(contactSource.notes, 2_000),
+        isPrimary: bool(contactSource.isPrimary, true),
+      } : undefined,
+      vehicles,
+    };
+    if (payload.customerId && !payload.contact && !payload.vehicles.length) throw new Error('Onboarding an existing Fleet account requires a contact or vehicle');
+    const details = [payload.contact ? 'contact' : '', payload.vehicles.length ? `${payload.vehicles.length} vehicle${payload.vehicles.length === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ');
+    return { kind, payload, summary: `Onboard ${payload.account.name}${details ? ` with ${details}` : ''}` };
   }
   throw new Error('Unsupported agent action');
 }

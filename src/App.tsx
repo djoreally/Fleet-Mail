@@ -83,7 +83,7 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
   const fetchEmails = useCallback(async (isInitial = false) => {
     setIsRefreshing(true);
     try {
-      const res = await fetch(`/api/agentmail/messages?inbox=${encodeURIComponent(activeInbox)}`);
+      const res = await fleetFetch(`/api/agentmail/messages?inbox=${encodeURIComponent(activeInbox)}`);
       if (res.ok) {
         const data = await res.json();
         const incomingList: EmailMessage[] = data.messages || [];
@@ -134,7 +134,7 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
   useEffect(() => { fetchEmails(true); const interval = setInterval(() => fetchEmails(false), 10000); return () => clearInterval(interval); }, [activeInbox, fetchEmails]);
 
   const handleSendEmail = async (payload: SendEmailPayload): Promise<boolean> => {
-    try { const res = await fetch('/api/agentmail/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); if (res.ok) { await fetchEmails(false); return true; } return false; }
+    try { const res = await fleetFetch('/api/agentmail/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); if (res.ok) { await fetchEmails(false); return true; } return false; }
     catch (e) { console.error('Failed to send email:', e); return false; }
   };
   const handleSendReply = async (replyText: string, to: string, subject: string): Promise<boolean> => handleSendEmail({ inbox: activeInbox, to, subject, body: replyText });
@@ -146,10 +146,12 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
     const selectedEmail = emails.find(e => e.id === selectedEmailId) || null;
     try {
       const apiMessages = newMessages.map(m => ({ role: m.role, content: m.content }));
-      const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: apiMessages, contextInbox: activeInbox, activeEmail: selectedEmail, personality: settings.personalityFocus, attachments }) });
+      const res = await fleetFetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: apiMessages, contextInbox: activeInbox, activeEmail: selectedEmail, personality: settings.personalityFocus, attachments }) });
       if (!res.ok) { const errData = await res.json(); throw new Error(errData.error || 'Failed to get AI response'); }
       const data = await res.json();
-      const assistantMsg: ChatMessage = { id: `ai_${Date.now()}`, role: 'assistant', content: String(data.content || '').replace(/```json:agent_action\s*[\s\S]*?\s*```/g, '').trim(), timestamp: new Date().toISOString(), emailDraft: data.emailDraft, actionProposal: data.actionProposal ? { ...data.actionProposal, state: 'ready' } : undefined };
+      const cleaned = String(data.content || '').replace(/```json:agent_action\s*[\s\S]*?\s*```/g, '').trim();
+      const fallback = data.actionProposal?.proposal?.summary ? `${data.actionProposal.proposal.summary} is ready for your confirmation.` : 'Fleet OS completed the request but did not return a displayable response. Nothing was changed.';
+      const assistantMsg: ChatMessage = { id: `ai_${Date.now()}`, role: 'assistant', content: cleaned || fallback, timestamp: new Date().toISOString(), emailDraft: data.emailDraft, actionProposal: data.actionProposal ? { ...data.actionProposal, state: 'ready' } : undefined };
       setChatMessages(prev => [...prev, assistantMsg]);
     } catch (err: any) {
       setChatMessages(prev => [...prev, { id: `err_${Date.now()}`, role: 'assistant', content: `I couldn't complete that request safely. ${err?.message || 'Please try again.'}`, timestamp: new Date().toISOString() }]);
@@ -159,10 +161,12 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
   const handleConfirmAgentAction = async (messageId: string, confirmationToken: string) => {
     setChatMessages(messages => messages.map(message => message.id === messageId && message.actionProposal ? { ...message, actionProposal: { ...message.actionProposal, state: 'executing', error: undefined } } : message));
     try {
-      const response = await fetch('/api/agent/actions/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmationToken, confirmed: true }) });
+      const response = await fleetFetch('/api/agent/actions/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmationToken, confirmed: true }) });
       const body = await response.json(); if (!response.ok) throw new Error(body.error || 'The action could not be executed');
       setChatMessages(messages => messages.map(message => message.id === messageId && message.actionProposal ? { ...message, actionProposal: { ...message.actionProposal, state: 'executed' } } : message));
+      setChatMessages(messages => [...messages, { id: `exec_${Date.now()}`, role: 'assistant', content: String(body.message || 'The confirmed action was completed successfully.'), timestamp: new Date().toISOString() }]);
       if (body.kind === 'email.send') await fetchEmails(false);
+      if (['fleet.account.create','fleet.contact.create','fleet.customer.onboard'].includes(String(body.kind))) await fetchContacts();
     } catch (error) {
       setChatMessages(messages => messages.map(message => message.id === messageId && message.actionProposal ? { ...message, actionProposal: { ...message.actionProposal, state: 'failed', error: error instanceof Error ? error.message : 'The action failed' } } : message));
     }
