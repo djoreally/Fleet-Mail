@@ -1,12 +1,10 @@
 import { Router } from 'express';
-import { callAICompletion } from '../services/ai.js';
 import { getAgentMailClient } from '../services/agentmail.js';
 import { AGENT_SKILLS, formatAgentPlainText, redactObject, redactSensitiveData } from '../services/agentSkills.js';
-import { createAgentActionProposal } from '../services/agentActions.js';
 import { planAgentTools, type AgentToolPlan } from '../services/agentToolRouter.js';
-import { executeWebCapability } from '../services/webCapabilityRouter.js';
 import { decodeVin, isValidVin, normalizeVin } from '../services/nhtsa.js';
 import { requireFleetOrganization } from '../services/fleetAuth.js';
+import { runFleetAgentToolLoop } from '../services/fleetAgentLoop.js';
 
 export const tenantChatRouter = Router();
 
@@ -71,15 +69,13 @@ tenantChatRouter.post('/', async (req, res) => {
     const toolPlan = (req.body?.agentToolPlan && typeof req.body.agentToolPlan === 'object'
       ? req.body.agentToolPlan
       : planAgentTools(latestUserText)) as AgentToolPlan;
-    const webResult = await executeWebCapability(latestUserText, toolPlan);
 
     const groundedContext = redactObject({
       activeInbox,
       selectedEmail: activeEmail || null,
       recentInbox,
-      fleetToolPlan: { readTools: toolPlan.readTools, webCapability: toolPlan.webCapability },
+      suggestedFleetToolPlan: { readTools: toolPlan.readTools, webCapability: toolPlan.webCapability },
       vehicleIntelligence: { source: 'NHTSA vPIC', decoded: nhtsaVehicles },
-      web: webResult.status === 'skipped' ? null : webResult,
       attachedDocuments: attachments.filter((file: any) => file.text || file.extractionError).map((file: any) => ({
         name: file.name,
         type: file.type,
@@ -88,29 +84,17 @@ tenantChatRouter.post('/', async (req, res) => {
       })),
     });
 
-    const systemPrompt = `You are the Fleet OS agent. Keep the experience simple: understand the request, use only server-executed capabilities, then explain the result.
-Use the authenticated organization context supplied by the server. Never infer tenant identity from an inbox supplied by the user.
-Ground names, facts, deadlines, and claims in the supplied context. Clearly label assumptions and never invent search results or execution success.
-Use the user's preferred ${personality} tone. Extract action items, owners, dates, blockers, and the safest next action.
-Vehicle VIN intelligence is supplied in Authenticated Fleet context.vehicleIntelligence and comes from NHTSA vPIC. When a VIN is present, use that decoded data before claiming vehicle specs are unavailable. Do not use open-web research for VIN decoding when NHTSA data is available.
-Never emit provider commands, tool-call markup, XML-like function calls, JSON tool payloads, implementation names, or internal routing details in visible text.
-Do not narrate provider selection. Say what you are doing in user terms such as "I researched the company" or "I decoded the VIN".
-The runtime owns web execution. You do not choose or invoke providers yourself.
-A web action succeeded only when Authenticated Fleet context.web.status is "success". If it is "failed" or "blocked", state the short user-facing reason and do not fabricate page content.
-If the user asks to find a new company, prospect, lead, or business in an area and context.web.status is "success", use the returned open-web results. Do not incorrectly claim web research is unavailable.
-Never claim an email, calendar event, browser submission, payment, invoice, schedule, dispatch, authorization, prospect conversion, or work-order change executed unless a confirmed executor returned success.
-Browser form work is prepare-only unless a separate confirmed executor reports submission success.
-For outbound email, you may prepare a reviewable email draft. Consequential actions remain confirmation-gated.
+    const systemPrompt = `You are the Fleet OS agent. Work like a capable service-writer/operator: understand the request, use the controlled tools you are given, inspect their structured results, and continue using tools when another lookup is required before answering.
+Use the authenticated organization context supplied by the server. Never infer tenant identity from user text or an inbox supplied by the user.
+When a request depends on current Fleet records, use the organization-scoped Fleet tools. Do not claim you lack a search function, database access, contact access, vehicle access, work-order access, financial access, email access, or document access merely because the information was not preloaded. Search for it.
+Read-only tools may run automatically. Their results are authoritative only for the authenticated organization. Tool results may be empty; empty results mean no matching organization-scoped record was found, not that the tool does not exist.
+You may chain multiple read tools across up to five bounded rounds when needed, for example person → account → vehicles → work orders → invoice → email. Prefer canonical IDs returned by tools over names when linking records.
+Consequential mutations are NEVER automatic. Email, calendar, work-order mutations, authorization decisions, and prospect conversion are prepared for explicit confirmation and are not complete until the confirmation-gated executor reports success.
+Use the user's preferred ${personality} tone. Ground names, facts, deadlines, and claims in trusted context or actual tool results. Clearly label assumptions and never invent search results or execution success.
+Vehicle VIN intelligence comes from NHTSA vPIC. Use it before open-web research for VIN decoding.
+Public-web research uses the approved server-owned Browserbase capability tools. Interactive browser/form work never authorizes consequential submission. Do not narrate provider selection.
+Never emit provider commands, tool-call markup, XML-like function calls, JSON tool payloads, implementation names, database internals, or routing details in visible text.
 The visible response must be plain human-readable text without Markdown headings, tables, fenced code, raw tool syntax, or provider jargon.
-
-If an email draft is useful, include exactly one hidden review block:
-\`\`\`json:email_draft
-{"to":"recipient@example.com","subject":"Subject","body":"Body"}
-\`\`\`
-If the user requests a supported consequential action, include exactly one hidden action block:
-\`\`\`json:agent_action
-{"kind":"supported.action.kind","payload":{}}
-\`\`\`
 
 Authenticated Fleet context: ${JSON.stringify(groundedContext)}`;
 
@@ -128,34 +112,25 @@ Authenticated Fleet context: ${JSON.stringify(groundedContext)}`;
       }
     }
 
-    const aiResult = await callAICompletion(safeMessages, systemPrompt);
+    const agentResult = await runFleetAgentToolLoop({ organizationId, messages: safeMessages, systemPrompt, latestUserText });
+    const webResult = agentResult.webExecution;
 
     let emailDraft = null;
-    const draftMatch = aiResult.content.match(/```json:email_draft\s*([\s\S]*?)\s*```/);
-    if (draftMatch) {
-      try { emailDraft = JSON.parse(draftMatch[1]); } catch { emailDraft = null; }
-    }
-
-    let actionProposal = null;
-    const actionMatch = aiResult.content.match(/```json:agent_action\s*([\s\S]*?)\s*```/);
-    if (actionMatch) {
-      try {
-        const action = JSON.parse(actionMatch[1]);
-        actionProposal = createAgentActionProposal(action.kind, action.payload, organizationId);
-      } catch (error) {
-        console.warn('Ignored invalid agent action proposal:', error instanceof Error ? error.message : error);
-      }
+    if (agentResult.actionProposal?.kind === 'email.send') {
+      const payload = agentResult.actionProposal.payload as Record<string, unknown>;
+      emailDraft = { to: payload.to, subject: payload.subject, body: payload.text };
     }
 
     return res.json({
-      content: formatAgentPlainText(aiResult.content),
-      model: aiResult.model,
-      provider: aiResult.provider,
+      content: formatAgentPlainText(agentResult.content),
+      model: agentResult.model,
+      provider: agentResult.provider,
       emailDraft,
-      actionProposal,
+      actionProposal: agentResult.actionProposal,
       toolPlan: { readTools: toolPlan.readTools, webCapability: toolPlan.webCapability },
+      toolExecution: { rounds: agentResult.rounds, trace: agentResult.toolTrace },
       vehicleIntelligence: nhtsaVehicles,
-      webExecution: {
+      webExecution: webResult ? {
         capability: webResult.capability,
         provider: webResult.provider,
         status: webResult.status,
@@ -164,12 +139,13 @@ Authenticated Fleet context: ${JSON.stringify(groundedContext)}`;
         durationMs: webResult.durationMs,
         sessionId: webResult.sessionId,
         cacheStatus: webResult.cacheStatus,
-      },
+      } : null,
       skillsUsed: [
         ...AGENT_SKILLS.filter((skill: any) => typeof skill === 'string').slice(0, 0),
-        'tenant-grounding', 'context-memory', 'predictive-drafting', 'grounded-recall',
+        'tenant-grounding', 'context-memory', 'bounded-tool-loop', 'predictive-drafting', 'grounded-recall',
+        ...(agentResult.toolTrace.length ? ['iterative-tool-use'] : []),
         ...(nhtsaVehicles.length ? ['nhtsa-vin-decode'] : []),
-        ...(webResult.status === 'success' ? [`web:${webResult.capability}`] : []),
+        ...(webResult?.status === 'success' ? [`web:${webResult.capability}`] : []),
         'pii-redaction', 'sentinel',
       ],
     });
