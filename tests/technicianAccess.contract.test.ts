@@ -10,7 +10,7 @@ describe('Technician OS access boundaries', () => {
 
   it('resolves the signed-in technician profile and enforces assignment scope', () => {
     expect(access).toContain("access.role !== 'technician'");
-    expect(access).toContain('w.technician_id=$3');
+    expect(access).toContain('organization_id=$1 AND id=$2 AND technician_id=$3');
     expect(access).toContain('Technicians may only access work orders assigned to them');
   });
 
@@ -27,7 +27,7 @@ describe('Technician OS access boundaries', () => {
   });
 
   it('renders a role-specific technician dashboard', () => {
-    expect(dashboard).toContain("accessBody.role==='technician'");
+    expect(dashboard).toContain("access?.role==='technician'");
     expect(dashboard).toContain("fleetFetch('/api/technician/me')");
     expect(dashboard).toContain('Technician OS');
     expect(dashboard).toContain('Only work assigned to your technician profile is shown');

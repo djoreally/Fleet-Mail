@@ -7,9 +7,9 @@ describe('agent runtime Fleet search contract',()=>{
     for(const term of ['prospectContacts','fleetAccounts','vehicles','workOrders','maintenance','client.inboxes.messages.list']) expect(service).toContain(term);
   });
   it('grounds chat only after verified organization access',()=>{
-    const app=readFileSync('src/server/app.ts','utf8');
+    const app=readFileSync('src/server/app.ts','utf8').replace(/\s+/g,'');
     const runtime=readFileSync('src/server/services/fleetAgentRuntime.ts','utf8');
-    expect(app).toContain("app.use('/api/chat', requireFleetSession)");
+    expect(app).toContain("app.use('/api/chat',requireFleetSession)");
     expect(runtime).toContain('requireFleetOrganization(req)');
     expect(runtime).not.toContain('resolveAgentRuntimeOrganization');
     expect(runtime).toContain('searchAgentRuntimeContext');

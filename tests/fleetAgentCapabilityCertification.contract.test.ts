@@ -81,7 +81,8 @@ describe('Fleet Agent capability certification', () => {
     });
 
     it('keeps provider choice server-owned and excludes raw provider invocation syntax from the model contract', () => {
-      expect(webRouter).toContain('The LLM never chooses a');
+      expect(webRouter).toContain('async function researchWithFallback');
+      expect(webRouter.indexOf('process.env.BROWSERBASE_API_KEY')).toBeLessThan(webRouter.indexOf('process.env.FIRECRAWL_API_KEY'));
       expect(chat).toContain('The runtime owns web execution. You do not choose or invoke providers yourself.');
       expect(chat).toContain('Never emit provider commands, tool-call markup');
     });

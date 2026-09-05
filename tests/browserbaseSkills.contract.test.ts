@@ -20,16 +20,18 @@ describe('Browserbase skills and Fleet identity routing contract', () => {
     expect(plan.readTools).toContain('workOrders.search');
   });
 
-  it('uses Browserbase Search through the documented direct HTTP endpoint, not a nonexistent SDK search method', () => {
+  it('uses Browserbase Search through the REST API, not a nonexistent SDK search method', () => {
     const browser = readFileSync('src/server/services/browserbase.ts', 'utf8');
-    expect(browser).toContain("https://api.browserbase.com/v1/search");
+    expect(browser).toContain("const BROWSERBASE_API_BASE = 'https://api.browserbase.com/v1'");
+    expect(browser).toContain('`${BROWSERBASE_API_BASE}/search`');
     expect(browser).toContain("'X-BB-API-Key': apiKey()");
     expect(browser).not.toContain('client().search.web');
   });
 
-  it('keeps Fetch for static retrieval and Stagehand for browser interaction', () => {
+  it('keeps REST Fetch for static retrieval and Stagehand for browser interaction', () => {
     const browser = readFileSync('src/server/services/browserbase.ts', 'utf8');
-    expect(browser).toContain('client().fetchAPI.create');
+    expect(browser).toContain('`${BROWSERBASE_API_BASE}/fetch`');
+    expect(browser).not.toContain('client().fetchAPI.create');
     expect(browser).toContain('Browserbase Fetch returned no readable content');
     expect(browser).toContain('browserbase.launch');
     expect(browser).toContain('Stagehand.create');

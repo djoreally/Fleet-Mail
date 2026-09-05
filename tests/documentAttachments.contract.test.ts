@@ -3,11 +3,12 @@ import { readFileSync } from 'node:fs';
 
 describe('chat document attachment contract', () => {
   it('transports PDF and DOCX bytes and extracts their text server-side before agent grounding', () => {
-    const ui = readFileSync('src/components/AIChatView.tsx', 'utf8');
+    const ui = readFileSync('src/components/AIChatView.tsx', 'utf8').replace(/\s+/g, '');
     const extraction = readFileSync('src/server/services/documentTextExtraction.ts', 'utf8');
     const middleware = readFileSync('src/server/services/chatAttachmentExtraction.ts', 'utf8');
     const app = readFileSync('src/server/app.ts', 'utf8');
-    expect(ui).toContain("type === 'application/pdf' || type === DOCX");
+    expect(ui).toContain("type==='application/pdf'||type===DOCX");
+    expect(ui).toContain("'application/pdf',DOCX");
     expect(extraction).toContain("import('pdf-parse')");
     expect(extraction).toContain("import('mammoth')");
     expect(middleware).toContain('MAX_ATTACHMENTS = 4');

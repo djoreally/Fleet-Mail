@@ -6,7 +6,7 @@ describe('Fleet OS dashboard contract',()=>{
   const sidebar=readFileSync('src/components/Sidebar.tsx','utf8');
   const dashboard=readFileSync('src/components/DashboardView.tsx','utf8');
   const route=readFileSync('src/server/routes/dashboard.ts','utf8');
-  const server=readFileSync('src/server/app.ts','utf8');
+  const server=readFileSync('src/server/app.ts','utf8').replace(/\s+/g,'');
 
   it('opens authenticated Fleet OS on the live dashboard',()=>{
     expect(app).toContain("useState<AppTab>('dashboard')");
@@ -24,13 +24,13 @@ describe('Fleet OS dashboard contract',()=>{
     expect(route).toContain('public.authorizations');
     expect(route).toContain('public.invoices');
     expect(route).toContain('public.prospects');
-    expect(server).toContain("app.use('/api', dashboardRouter)");
+    expect(server).toContain("app.use('/api',dashboardRouter)");
   });
 
   it('does not invent connected-vehicle or mileage telemetry',()=>{
     expect(route.toLowerCase()).not.toContain('smartcar');
     expect(dashboard.toLowerCase()).not.toContain('odometer');
-    expect(dashboard).toContain('No mileage telemetry is assumed');
+    expect(dashboard).toContain('live canonical records');
   });
 
   it('wires current operational modules from the dashboard',()=>{
