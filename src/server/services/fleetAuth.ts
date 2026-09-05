@@ -8,7 +8,7 @@ import { serverConfig } from '../config.js';
 import { fleetRoleHasPermission, normalizeFleetRole, permissionsForRole, type FleetPermission, type FleetRole } from './rbac.js';
 
 export class FleetAuthError extends Error { constructor(public status: number, message: string) { super(message); } }
-type FleetRequest = Request & { fleetOrganizationId?: string; fleetMembershipRole?: FleetRole; fleetUserId?: string; fleetAuthSubject?: string };
+type FleetRequest = Request & { fleetOrganizationId?: string; fleetMembershipRole?: FleetRole; fleetEffectiveRole?: FleetRole; fleetUserId?: string; fleetAuthSubject?: string };
 
 function database() { const value=getDb(); if(!value) throw new FleetAuthError(503,'Production database is not configured'); return value; }
 function databaseUrl() { const value=process.env.DATABASE_URL||process.env.NEON_DATABASE_URL; if(!value) throw new FleetAuthError(503,'Production database is not configured'); return value; }
@@ -20,6 +20,14 @@ export function authUser(payload:any){
   return identities.find(isIdentity)||roots.find(isIdentity)||null;
 }
 function verifiedBearerClaims(authorization:string){try{const encoded=authorization.slice('Bearer '.length).split('.')[1];if(!encoded)return null;return JSON.parse(Buffer.from(encoded,'base64url').toString('utf8'));}catch{return null;}}
+function effectiveWorkspaceRole(req:Request,membershipRole:FleetRole):FleetRole{
+  const requested=String(req.header('x-fleet-workspace-mode')||'').trim().toLowerCase();
+  if(!requested||requested==='auto')return membershipRole;
+  if(requested===membershipRole)return membershipRole;
+  if(!['dispatcher','technician'].includes(requested))throw new FleetAuthError(400,'Unknown Fleet workspace mode');
+  if(!['owner','admin'].includes(membershipRole))throw new FleetAuthError(403,'Only owner or admin users may switch Fleet workspace mode');
+  return requested as FleetRole;
+}
 
 async function claimInvitation(req:Request,user:{id:string;email:string;name:string|null}){
   const inviteId=String(req.header('x-fleet-invite-id')||'').trim();
@@ -72,9 +80,11 @@ export async function requireFleetOrganization(req:Request):Promise<string>{
   let memberships=await db.select({organizationId:organizationMemberships.organizationId,role:organizationMemberships.role}).from(organizationMemberships).where(and(eq(organizationMemberships.userId,user.id),eq(organizationMemberships.status,'active')));
   if(!memberships.length){const organizationId=randomUUID();await db.insert(organizations).values({id:organizationId,name:`${user.name}'s Fleet`,slug:`fleet-${subject.replace(/[^a-z0-9]/gi,'').slice(0,12).toLowerCase()}-${organizationId.slice(0,6)}`});await db.insert(organizationMemberships).values({id:randomUUID(),organizationId,userId:user.id,role:'owner',status:'active'});memberships=[{organizationId,role:'owner'}];}
   const selected=requested?memberships.find(item=>item.organizationId===requested):memberships[0];if(!selected)throw new FleetAuthError(403,'You do not have access to this organization');
-  fleetReq.fleetOrganizationId=selected.organizationId;fleetReq.fleetMembershipRole=normalizeFleetRole(selected.role);fleetReq.fleetUserId=user.id;fleetReq.fleetAuthSubject=subject;return selected.organizationId;
+  const membershipRole=normalizeFleetRole(selected.role);const effectiveRole=effectiveWorkspaceRole(req,membershipRole);
+  fleetReq.fleetOrganizationId=selected.organizationId;fleetReq.fleetMembershipRole=membershipRole;fleetReq.fleetEffectiveRole=effectiveRole;fleetReq.fleetUserId=user.id;fleetReq.fleetAuthSubject=subject;return selected.organizationId;
 }
-export async function requireFleetRole(req:Request,allowedRoles:FleetRole[]){await requireFleetOrganization(req);const role=normalizeFleetRole((req as FleetRequest).fleetMembershipRole);if(!allowedRoles.includes(role))throw new FleetAuthError(403,'Your organization role does not permit this operation');return role;}
-export async function requireFleetPermission(req:Request,permission:FleetPermission){await requireFleetOrganization(req);const role=normalizeFleetRole((req as FleetRequest).fleetMembershipRole);if(!fleetRoleHasPermission(role,permission))throw new FleetAuthError(403,`Your organization role does not permit ${permission}`);return role;}
-export async function getFleetAccessContext(req:Request){const organizationId=await requireFleetOrganization(req);const fleetReq=req as FleetRequest;const role=normalizeFleetRole(fleetReq.fleetMembershipRole);return{organizationId,userId:fleetReq.fleetUserId||null,role,permissions:permissionsForRole(role)};}
+function requestRole(req:Request){const fleetReq=req as FleetRequest;return normalizeFleetRole(fleetReq.fleetEffectiveRole||fleetReq.fleetMembershipRole);}
+export async function requireFleetRole(req:Request,allowedRoles:FleetRole[]){await requireFleetOrganization(req);const role=requestRole(req);if(!allowedRoles.includes(role))throw new FleetAuthError(403,'Your organization role does not permit this operation');return role;}
+export async function requireFleetPermission(req:Request,permission:FleetPermission){await requireFleetOrganization(req);const role=requestRole(req);if(!fleetRoleHasPermission(role,permission))throw new FleetAuthError(403,`Your organization role does not permit ${permission}`);return role;}
+export async function getFleetAccessContext(req:Request){const organizationId=await requireFleetOrganization(req);const fleetReq=req as FleetRequest;const membershipRole=normalizeFleetRole(fleetReq.fleetMembershipRole);const role=requestRole(req);return{organizationId,userId:fleetReq.fleetUserId||null,role,membershipRole,workspaceMode:role===membershipRole?'auto':role,canSwitchWorkspace:['owner','admin'].includes(membershipRole),availableWorkspaces:['owner','admin'].includes(membershipRole)?[membershipRole,'dispatcher','technician']:[membershipRole],permissions:permissionsForRole(role)};}
 export function fleetAuthFailure(res:any,error:unknown){const status=error instanceof FleetAuthError?error.status:500;return res.status(status).json({error:error instanceof Error?error.message:'Fleet request failed'});}
