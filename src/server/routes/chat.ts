@@ -116,8 +116,8 @@ Authenticated Fleet context: ${JSON.stringify(groundedContext)}`;
     const webResult = agentResult.webExecution;
 
     let emailDraft = null;
-    if (agentResult.actionProposal?.kind === 'email.send') {
-      const payload = agentResult.actionProposal.payload as Record<string, unknown>;
+    if (agentResult.actionProposal?.proposal.kind === 'email.send') {
+      const payload = agentResult.actionProposal.proposal.payload;
       emailDraft = { to: payload.to, subject: payload.subject, body: payload.text };
     }
 
