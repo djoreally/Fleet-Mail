@@ -47,7 +47,7 @@ const ROLE_PERMISSIONS: Record<FleetRole, ReadonlySet<FleetPermission>> = {
   owner: ALL,
   admin: new Set(FLEET_PERMISSIONS.filter((permission) => permission !== 'organization.manage')),
   dispatcher: new Set([
-    'organization.view', 'team.view', 'settings.view',
+    'organization.view', 'team.view',
     'fleet_accounts.view', 'fleet_accounts.manage', 'vehicles.view', 'vehicles.manage',
     'schedule.view', 'schedule.manage', 'dispatch.view', 'dispatch.manage',
     'work_orders.view', 'work_orders.manage', 'authorizations.view', 'authorizations.manage',
