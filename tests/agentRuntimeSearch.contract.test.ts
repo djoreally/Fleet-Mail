@@ -13,6 +13,7 @@ describe('agent runtime Fleet search contract',()=>{
     expect(runtime).toContain('requireFleetOrganization(req)');
     expect(runtime).not.toContain('resolveAgentRuntimeOrganization');
     expect(runtime).toContain('searchAgentRuntimeContext');
-    expect(runtime).toContain('Trusted Fleet OS tool results');
+    expect(runtime).toContain('Trusted live Fleet OS tool results');
+    expect(runtime).toContain('Trusted Fleet Knowledge Layer');
   });
 });

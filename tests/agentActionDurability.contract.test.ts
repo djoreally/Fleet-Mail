@@ -7,7 +7,7 @@ describe('Fleet Agent durable execution contract', () => {
   const store = readFileSync('src/server/services/agentActionExecutionStore.ts', 'utf8');
   const migration = readFileSync('src/db/migrations/0006_agent_action_executions.sql', 'utf8');
   const migrate = readFileSync('src/db/migrate.ts', 'utf8');
-  const chat = readFileSync('src/server/routes/chat.ts', 'utf8');
+  const loop = readFileSync('src/server/services/fleetAgentLoop.ts', 'utf8');
   const prospecting = readFileSync('src/server/routes/prospecting.ts', 'utf8');
 
   it('binds signed proposals to the authenticated Fleet organization', () => {
@@ -15,7 +15,7 @@ describe('Fleet Agent durable execution contract', () => {
     expect(actions).toContain('expectedOrganizationId?: string');
     expect(actions).toContain('does not belong to this Fleet organization');
     expect(route).toContain("verifyAgentActionProposal(req.body?.confirmationToken, organizationId)");
-    expect(chat).toContain('createAgentActionProposal(action.kind, action.payload, organizationId)');
+    expect(loop).toContain('createAgentActionProposal(mutationKind, args, input.organizationId)');
     expect(prospecting).toContain("createAgentActionProposal('fleet.prospect.convert',{prospectId:req.params.id},org)");
   });
 

@@ -64,26 +64,34 @@ describe('Fleet Agent capability certification', () => {
 
   describe('execution truth and confirmation boundaries', () => {
     const chat = readFileSync('src/server/routes/chat.ts', 'utf8');
+    const loop = readFileSync('src/server/services/fleetAgentLoop.ts', 'utf8');
+    const actions = readFileSync('src/server/routes/agentActions.ts', 'utf8');
     const webRouter = readFileSync('src/server/services/webCapabilityRouter.ts', 'utf8');
 
     it('requires actual web execution success before the agent may claim success', () => {
-      expect(chat).toContain('A web action succeeded only when Authenticated Fleet context.web.status is "success"');
-      expect(chat).toContain('If it is "failed" or "blocked"');
-      expect(chat).toContain('do not fabricate page content');
+      expect(loop).toContain("success: result.status === 'success'");
+      expect(loop).toContain("error: result.status === 'success' ? undefined : result.error || `Web ${result.status}`");
+      expect(loop).toContain('executeWebCapability(source, planForWeb(capability))');
       expect(webRouter).toContain("status: 'failed'");
       expect(webRouter).toContain("status: 'blocked'");
+      expect(chat).toContain('never invent search results or execution success');
     });
 
     it('keeps consequential mutations confirmation-gated', () => {
-      expect(chat).toContain('Never claim an email, calendar event, browser submission, payment, invoice, schedule, dispatch, authorization, prospect conversion, or work-order change executed unless a confirmed executor returned success.');
-      expect(chat).toContain('Browser form work is prepare-only unless a separate confirmed executor reports submission success.');
-      expect(chat).toContain('createAgentActionProposal');
+      expect(chat).toContain('Consequential mutations are NEVER automatic');
+      expect(chat).toContain('are not complete until the confirmation-gated executor reports success');
+      expect(chat).toContain('Interactive browser/form work never authorizes consequential submission');
+      expect(loop).toContain('createAgentActionProposal(mutationKind, args, input.organizationId)');
+      expect(loop).toContain("status: 'confirmation_required'");
+      expect(actions).toContain("if (req.body?.confirmed !== true) return res.status(409)");
     });
 
     it('keeps provider choice server-owned and excludes raw provider invocation syntax from the model contract', () => {
       expect(webRouter).toContain('async function researchWithFallback');
       expect(webRouter.indexOf('process.env.BROWSERBASE_API_KEY')).toBeLessThan(webRouter.indexOf('process.env.FIRECRAWL_API_KEY'));
-      expect(chat).toContain('The runtime owns web execution. You do not choose or invoke providers yourself.');
+      expect(loop).toContain('executeWebCapability');
+      expect(chat).toContain('Public-web research uses the approved server-owned Browserbase capability tools');
+      expect(chat).toContain('Do not narrate provider selection');
       expect(chat).toContain('Never emit provider commands, tool-call markup');
     });
 
