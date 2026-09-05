@@ -37,6 +37,7 @@ export async function callAICompletion(messages: AIMessage[], systemPrompt?: str
 
   if (atlasKey && atlasKey !== 'your-atlascloud-api-key' && atlasKey.trim() !== '') {
     const tools = Array.isArray(options.tools) ? options.tools : [];
+    const model = tools.length ? serverConfig.atlasCloudToolModel : serverConfig.atlasCloudModel;
     const response = await fetch(`${serverConfig.atlasCloudBaseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -44,7 +45,7 @@ export async function callAICompletion(messages: AIMessage[], systemPrompt?: str
         Authorization: `Bearer ${atlasKey.trim()}`,
       },
       body: JSON.stringify({
-        model: serverConfig.atlasCloudModel,
+        model,
         messages: formattedMessages,
         temperature: options.temperature ?? 0.3,
         max_tokens: options.maxTokens ?? 4096,
@@ -77,7 +78,7 @@ export async function callAICompletion(messages: AIMessage[], systemPrompt?: str
       content: typeof message.content === 'string' ? message.content : '',
       toolCalls,
       finishReason: data.choices?.[0]?.finish_reason || null,
-      model: data.model || serverConfig.atlasCloudModel,
+      model: data.model || model,
       provider: 'AtlasCloud AI',
     };
   }

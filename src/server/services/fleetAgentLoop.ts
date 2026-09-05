@@ -6,11 +6,14 @@ import { maintenanceIntelligenceService } from './maintenanceIntelligence.js';
 import { financialReadModelService } from './financialReadModel.js';
 import { executeWebCapability } from './webCapabilityRouter.js';
 import { decodeVin, isValidVin, normalizeVin } from './nhtsa.js';
+import { getFleetKnowledgeContext } from './fleetKnowledge.js';
+import { searchFleetChangeLedger } from './fleetAuditSearch.js';
 import type { AgentReadTool, AgentToolPlan, AgentWebCapability } from './agentToolRouter.js';
 
 const MAX_TOOL_ROUNDS = 5;
 const objectSchema = (properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const textProp = (description: string) => ({ type: 'string', description });
+const numberProp = (description: string) => ({ type: 'number', minimum: 0, description });
 
 const readToolMap: Record<string, AgentReadTool> = {
   search_prospects: 'prospects.search',
@@ -48,6 +51,8 @@ const queryTool = (name: string, description: string): AIToolDefinition => ({
 });
 
 export const FLEET_AGENT_TOOLS: AIToolDefinition[] = [
+  queryTool('search_fleet_knowledge', 'Fuzzy-search the tenant Fleet knowledge directory across accounts, contacts, prospects, team, technicians, vehicles, and work orders. Use this first when a name or identifier may be misspelled or ambiguous.'),
+  queryTool('search_change_ledger', 'Search the tenant audit/change ledger to determine what changed, who or what changed it, and when.'),
   queryTool('search_prospects', 'Search tenant prospects and lead/company records.'),
   queryTool('search_prospect_activity', 'Search tenant prospect activity and outreach history.'),
   queryTool('search_contacts', 'Search tenant customer contacts, prospect contacts, members, and technicians.'),
@@ -71,11 +76,11 @@ export const FLEET_AGENT_TOOLS: AIToolDefinition[] = [
   { type: 'function', function: { name: 'browse_web', description: 'Open and interact with a specific public HTTPS page using the approved browser session path. This does not authorize consequential submission.', parameters: objectSchema({ url: textProp('Direct HTTPS URL'), instruction: textProp('What to inspect or do on the page') }, ['url','instruction']) } },
   { type: 'function', function: { name: 'read_web_document', description: 'Fetch/read a public document or PDF from a direct HTTPS URL.', parameters: objectSchema({ url: textProp('Direct HTTPS document URL'), instruction: textProp('What information to extract') }, ['url']) } },
   { type: 'function', function: { name: 'prepare_web_form', description: 'Inspect and prepare fields for a public web form. Never submit consequential forms automatically.', parameters: objectSchema({ url: textProp('Direct HTTPS form URL'), instruction: textProp('What fields should be prepared') }, ['url','instruction']) } },
-  { type: 'function', function: { name: 'send_email', description: 'Prepare a tenant-scoped outbound email for explicit confirmation. This tool never sends automatically.', parameters: objectSchema({ to: textProp('Recipient email'), subject: textProp('Subject'), text: textProp('Plain-text body') }, ['to','subject','text']) } },
-  { type: 'function', function: { name: 'create_calendar_event', description: 'Prepare a calendar event for explicit confirmation.', parameters: objectSchema({ summary: textProp('Event title'), start: textProp('ISO date-time start'), end: textProp('ISO date-time end'), description: textProp('Optional description') }, ['summary','start','end']) } },
-  { type: 'function', function: { name: 'create_work_order', description: 'Prepare a Fleet work order for explicit confirmation.', parameters: objectSchema({ vehicleId: textProp('Canonical tenant vehicle ID'), complaint: textProp('Complaint/requested service'), priority: textProp('Optional priority') }, ['vehicleId','complaint']) } },
+  { type: 'function', function: { name: 'send_email', description: 'Prepare a tenant-scoped outbound email for explicit confirmation. This tool never sends automatically.', parameters: objectSchema({ to: textProp('Recipient email'), subject: textProp('Subject'), text: textProp('Plain-text body'), prospectId: textProp('Optional canonical prospect ID'), contactId: textProp('Optional canonical contact ID') }, ['to','subject','text']) } },
+  { type: 'function', function: { name: 'create_calendar_event', description: 'Prepare a calendar event for explicit confirmation.', parameters: objectSchema({ summary: textProp('Event title'), start: textProp('ISO date-time start'), end: textProp('ISO date-time end'), description: textProp('Optional description'), location: textProp('Optional location'), attendees: { type: 'array', items: { type: 'string' }, description: 'Optional attendee email addresses' } }, ['summary','start','end']) } },
+  { type: 'function', function: { name: 'create_work_order', description: 'Prepare a Fleet work order for explicit confirmation.', parameters: objectSchema({ vehicleId: textProp('Canonical tenant vehicle ID'), complaint: textProp('Complaint/requested service'), requestedServices: { type: 'array', items: { type: 'string' } }, purchaseOrderNumber: textProp('Optional PO number'), odometer: numberProp('Optional odometer'), engineHours: numberProp('Optional engine hours'), scheduledAt: textProp('Optional ISO scheduled time'), priority: textProp('Optional priority'), customerNotes: textProp('Optional customer notes'), technicianNotes: textProp('Optional technician notes') }, ['vehicleId','complaint']) } },
   { type: 'function', function: { name: 'transition_work_order', description: 'Prepare a work-order status transition for explicit confirmation.', parameters: objectSchema({ workOrderId: textProp('Canonical tenant work-order ID'), status: textProp('Target status') }, ['workOrderId','status']) } },
-  { type: 'function', function: { name: 'decide_authorization', description: 'Prepare an authorization decision for explicit confirmation.', parameters: objectSchema({ authorizationId: textProp('Canonical tenant authorization ID'), decision: { type: 'string', enum: ['authorized','rejected'] }, note: textProp('Optional decision note') }, ['authorizationId','decision']) } },
+  { type: 'function', function: { name: 'decide_authorization', description: 'Prepare an authorization decision for explicit confirmation.', parameters: objectSchema({ authorizationId: textProp('Canonical tenant authorization ID'), decision: { type: 'string', enum: ['authorized','rejected'] }, authorizedBy: textProp('Optional authorizer'), authorizationMethod: textProp('Optional authorization method'), purchaseOrderNumber: textProp('Optional PO number'), notes: textProp('Optional decision notes') }, ['authorizationId','decision']) } },
   { type: 'function', function: { name: 'convert_prospect', description: 'Prepare conversion of a tenant prospect to a fleet account for explicit confirmation.', parameters: objectSchema({ prospectId: textProp('Canonical tenant prospect ID') }, ['prospectId']) } },
 ];
 
@@ -92,7 +97,17 @@ function planForWeb(capability: AgentWebCapability): AgentToolPlan {
   return { readTools: [], webCapability: capability, webMode: capability === 'research' ? 'research' : capability === 'none' ? 'none' : 'browser', reason: 'Selected by the bounded server-owned Fleet Agent tool loop.' };
 }
 
-async function executeReadTool(organizationId: string, name: string, args: Record<string, unknown>, fallbackQuery: string) {
+type ReadExecution = { success: boolean; data?: unknown; error?: string; webExecution?: any };
+
+async function executeReadTool(organizationId: string, name: string, args: Record<string, unknown>, fallbackQuery: string): Promise<ReadExecution> {
+  const query = String(args.query || fallbackQuery || '').trim();
+
+  if (name === 'search_fleet_knowledge') {
+    return { success: true, data: await getFleetKnowledgeContext(organizationId, query) };
+  }
+  if (name === 'search_change_ledger') {
+    return { success: true, data: await searchFleetChangeLedger(organizationId, query) };
+  }
   if (name === 'decode_vin') {
     const vin = normalizeVin(String(args.vin || ''));
     if (!isValidVin(vin)) return { success: false, error: 'A valid 17-character VIN is required.' };
@@ -105,40 +120,35 @@ async function executeReadTool(organizationId: string, name: string, args: Recor
       ? String(args.query || fallbackQuery)
       : `${String(args.url || '')}\n${String(args.instruction || '')}`.trim();
     const result = await executeWebCapability(source, planForWeb(capability));
-    return { success: result.status === 'success', data: result, error: result.status === 'success' ? undefined : result.error || `Web ${result.status}` , webExecution: result };
+    return { success: result.status === 'success', data: result, error: result.status === 'success' ? undefined : result.error || `Web ${result.status}`, webExecution: result };
   }
 
   const selected = readToolMap[name];
   if (!selected) return { success: false, error: `Unsupported read tool: ${name}` };
-  const query = String(args.query || fallbackQuery || '').trim();
 
   if (selected === 'financials.summary') {
     return { success: true, data: await financialReadModelService.dashboard(organizationId) };
   }
 
   if (['locations.search','schedule.search','dispatch.search','inspections.search','authorizations.search','financials.search','invoices.search','payments.search','documents.search'].includes(selected)) {
-    const data = await searchAgentOperationalContext(organizationId, query, [selected]);
-    return { success: true, data };
+    return { success: true, data: await searchAgentOperationalContext(organizationId, query, [selected]) };
   }
 
   const core = await searchAgentRuntimeContext(organizationId, query);
   if (selected === 'maintenance.search') {
     return { success: true, data: { matches: core.fleet?.maintenance || [], attention: await maintenanceIntelligenceService.attention(organizationId) } };
   }
-  const pick: Record<AgentReadTool, unknown> = {
+
+  const pick: Partial<Record<AgentReadTool, unknown>> = {
     'prospects.search': core.fleet?.prospects || [],
     'prospectActivity.search': core.fleet?.prospectActivity || [],
     'contacts.search': { contacts: core.fleet?.contacts || [], prospectContacts: core.fleet?.prospectContacts || [], organizationMembers: core.fleet?.organizationMembers || [], technicians: core.fleet?.technicians || [] },
-    'locations.search': [],
     'fleetAccounts.search': core.fleet?.fleetAccounts || [],
     'vehicles.search': core.fleet?.vehicles || [],
-    'maintenance.search': core.fleet?.maintenance || [],
     'workOrders.search': core.fleet?.workOrders || [],
-    'schedule.search': [], 'dispatch.search': [], 'inspections.search': [], 'authorizations.search': [], 'financials.search': [], 'financials.summary': {}, 'invoices.search': [], 'payments.search': [],
     'email.search': core.emails || [],
-    'documents.search': [],
   };
-  return { success: true, data: pick[selected] };
+  return { success: true, data: pick[selected] ?? [] };
 }
 
 export interface FleetAgentLoopResult {
@@ -164,7 +174,7 @@ export async function runFleetAgentToolLoop(input: {
   let lastModel = '';
   let lastProvider = '';
 
-  for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
     const completion = await callAICompletion(history, input.systemPrompt, { tools: FLEET_AGENT_TOOLS, toolChoice: 'auto', temperature: 0.2 });
     lastModel = completion.model;
     lastProvider = completion.provider;
@@ -185,7 +195,7 @@ export async function runFleetAgentToolLoop(input: {
           try {
             actionProposal = createAgentActionProposal(mutationKind, args, input.organizationId);
             toolTrace.push({ name: call.function.name, success: true, confirmationRequired: true });
-            history.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ success: true, status: 'confirmation_required', message: 'The action is prepared and must be explicitly confirmed before execution.' }) });
+            history.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ success: true, status: 'confirmation_required', proposalId: actionProposal.proposal.id, summary: actionProposal.proposal.summary, message: 'The action is prepared and must be explicitly confirmed before execution.' }) });
           } catch (error) {
             toolTrace.push({ name: call.function.name, success: false, confirmationRequired: true });
             history.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Invalid action proposal' }) });
@@ -214,6 +224,6 @@ export async function runFleetAgentToolLoop(input: {
     }
   }
 
-  const final = await callAICompletion(history, `${input.systemPrompt}\n\nThe bounded tool-round limit has been reached. Answer using only the verified tool results already present. Do not request another tool.`, { toolChoice: 'none', temperature: 0.2 });
-  return { content: final.content, model: final.model, provider: final.provider, actionProposal, toolTrace, webExecution, rounds: MAX_TOOL_ROUNDS + 1 };
+  const final = await callAICompletion(history, `${input.systemPrompt}\n\nThe bounded five-round tool limit has been reached. Answer using only the verified tool results already present. Do not request another tool.`, { toolChoice: 'none', temperature: 0.2 });
+  return { content: final.content, model: final.model, provider: final.provider, actionProposal, toolTrace, webExecution, rounds: MAX_TOOL_ROUNDS };
 }
