@@ -46,15 +46,17 @@ describe('public API security boundaries', () => {
     expect(chat).not.toContain('DEFAULT_INBOX');
   });
 
-  it('protects database management endpoints with centralized RBAC permissions', () => {
+  it('does not expose database query or migration control plane through the application', () => {
     const app = compact(readFileSync('src/server/app.ts', 'utf8'));
-    const auth = readFileSync('src/server/services/fleetAuth.ts', 'utf8');
-    const rbac = readFileSync('src/server/services/rbac.ts', 'utf8');
-    expect(app).toContain("app.use('/api/neon',requireFleetAdmin)");
-    expect(app).toContain("app.use('/api/drizzle',requireFleetAdmin)");
-    expect(auth).toContain('export async function requireFleetPermission');
-    expect(app).toContain("requireFleetPermission(req,'infrastructure.manage')");
-    expect(rbac).toContain("'infrastructure.manage'");
+    const api = readFileSync('src/server/routes/api.ts', 'utf8');
+    expect(app).toContain("app.use('/api/neon',disabledDatabaseControlPlane)");
+    expect(app).toContain("app.use('/api/drizzle',disabledDatabaseControlPlane)");
+    expect(app.indexOf("app.use('/api/neon',disabledDatabaseControlPlane)")).toBeLessThan(app.indexOf("app.use('/api',apiRouter)"));
+    expect(app.indexOf("app.use('/api/drizzle',disabledDatabaseControlPlane)")).toBeLessThan(app.indexOf("app.use('/api',apiRouter)"));
+    expect(app).not.toContain('requireFleetAdmin');
+    expect(api).toContain("apiRouter.post('/neon/query'");
+    expect(api).toContain("apiRouter.post('/neon/migrate'");
+    expect(api).toContain("apiRouter.post('/drizzle/migrate'");
   });
 
   it('exposes authenticated access context for role-aware clients without replacing server authorization', () => {

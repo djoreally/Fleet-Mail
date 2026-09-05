@@ -24,12 +24,12 @@ import { prospectWebhookService, verifyAgentMailWebhook } from './services/prosp
 import { fleetAgentRuntimeMiddleware } from './services/fleetAgentRuntime.js';
 import { chatAttachmentExtractionMiddleware } from './services/chatAttachmentExtraction.js';
 import { fleetMutationLedgerMiddleware } from './services/fleetMutationLedger.js';
-import { fleetAuthFailure, getFleetAccessContext, requireFleetOrganization, requireFleetPermission } from './services/fleetAuth.js';
+import { fleetAuthFailure, getFleetAccessContext, requireFleetOrganization } from './services/fleetAuth.js';
 import { enforceAgentMailInboxScope, resolveOrganizationAgentMailInbox } from './services/agentMailTenantBoundary.js';
 import { serverConfig } from './config.js';
 
 async function requireFleetSession(req: Request, res: Response, next: NextFunction) { try { await requireFleetOrganization(req); return next(); } catch (error) { return fleetAuthFailure(res, error); } }
-async function requireFleetAdmin(req: Request, res: Response, next: NextFunction) { try { await requireFleetPermission(req, 'infrastructure.manage'); return next(); } catch (error) { return fleetAuthFailure(res, error); } }
+function disabledDatabaseControlPlane(_req: Request, res: Response) { return res.status(404).json({ error: 'Not found' }); }
 
 export function createApp() {
   const app = express();
@@ -46,7 +46,8 @@ export function createApp() {
     if (req.header('authorization')?.startsWith('Bearer ')) { try { const activeInbox=await resolveOrganizationAgentMailInbox(req);status.defaultInbox=activeInbox;status.activeInbox=activeInbox; } catch {} } return res.json(status);
   });
   app.get('/api/access', requireFleetSession, async (req,res)=>{try{return res.json(await getFleetAccessContext(req));}catch(error){return fleetAuthFailure(res,error);}});
-  app.use('/api/vehicles',requireFleetSession);app.use('/api/contacts',requireFleetSession);app.use('/api/agent',requireFleetSession);app.use('/api/team',requireFleetSession);app.use('/api/technician',requireFleetSession);app.use('/api/dispatcher',requireFleetSession);app.use('/api/neon',requireFleetAdmin);app.use('/api/drizzle',requireFleetAdmin);
+  app.use('/api/neon',disabledDatabaseControlPlane);app.use('/api/drizzle',disabledDatabaseControlPlane);
+  app.use('/api/vehicles',requireFleetSession);app.use('/api/contacts',requireFleetSession);app.use('/api/agent',requireFleetSession);app.use('/api/team',requireFleetSession);app.use('/api/technician',requireFleetSession);app.use('/api/dispatcher',requireFleetSession);
   app.use('/api/chat',requireFleetSession);app.use('/api/chat',enforceAgentMailInboxScope);app.use('/api/rewrite-tone',requireFleetSession);app.use('/api/generate-draft',requireFleetSession);app.use('/api/summarize-email',requireFleetSession);app.use('/api/agentmail',requireFleetSession);app.use('/api/agentmail',enforceAgentMailInboxScope);
   app.use('/api/chat',chatAttachmentExtractionMiddleware);app.use('/api/chat',fleetAgentRuntimeMiddleware);app.use('/api/chat',tenantChatRouter);
   app.use('/api/chat',(req,res)=>req.method==='POST'?res.status(410).json({error:'Legacy chat route is disabled'}):res.status(404).end());

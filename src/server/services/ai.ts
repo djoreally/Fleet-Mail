@@ -59,14 +59,17 @@ function toAnthropicMessages(messages: AIMessage[]) {
   for (const message of messages) {
     if (message.role === 'system') continue;
     if (message.role === 'tool') {
-      output.push({
-        role: 'user',
-        content: [{
-          type: 'tool_result',
-          tool_use_id: String(message.tool_call_id || ''),
-          content: typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? null),
-        }],
-      });
+      const block = {
+        type: 'tool_result',
+        tool_use_id: String(message.tool_call_id || ''),
+        content: typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? null),
+      };
+      const previous = output.at(-1);
+      if (previous?.role === 'user' && Array.isArray(previous.content) && previous.content.every((item: any) => item?.type === 'tool_result')) {
+        previous.content.push(block);
+      } else {
+        output.push({ role: 'user', content: [block] });
+      }
       continue;
     }
     if (message.role === 'assistant' && Array.isArray(message.tool_calls) && message.tool_calls.length) {
@@ -112,7 +115,7 @@ async function callAtlasToolCompletion(atlasKey: string, messages: AIMessage[], 
           description: tool.function.description,
           input_schema: tool.function.parameters,
         })),
-        tool_choice: { type: options.toolChoice === 'none' ? 'auto' : options.toolChoice ?? 'auto' },
+        tool_choice: { type: options.toolChoice ?? 'auto' },
       } : {}),
     }),
   });

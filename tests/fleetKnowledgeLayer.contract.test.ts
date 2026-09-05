@@ -23,11 +23,15 @@ describe('Fleet Knowledge Layer contract',()=>{
     expect(runtime).toContain('getFleetKnowledgeContext');
     expect(runtime).toContain('Never say you lack a search function');
   });
-  it('uses the canonical audit_events ledger and invalidates cached knowledge after successful writes',()=>{
+  it('uses the canonical audit_events ledger and invalidates cached knowledge after actual successful writes',()=>{
     expect(ledger).toContain('auditEvents');
     expect(ledger).toContain('invalidateFleetKnowledge');
     expect(ledger).toContain("res.statusCode>=400");
-    expect(ledger).toContain('MUTATING_METHODS');
+    expect(ledger).toContain('isStateChangingRequest');
+    expect(ledger).toContain('READ_ONLY_POSTS');
+    expect(ledger).toContain("'/api/chat'");
+    expect(ledger).toContain("'confirmationToken'");
+    expect(ledger).toContain('agent.${actionKind}.executed');
     expect(app).toContain('fleetMutationLedgerMiddleware');
     expect(webhook).toContain("eventType:'agentmail.prospect_reply.received'");
     expect(webhook).toContain('invalidateFleetKnowledge(organizationId)');
