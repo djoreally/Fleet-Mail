@@ -1,5 +1,5 @@
 import { createClient } from '@neondatabase/neon-js';
-import { createAuthClient } from '@neondatabase/neon-js/auth';
+import { createInternalNeonAuth } from '@neondatabase/neon-js/auth';
 import { Contact, EmailMessage } from '../types';
 import { DEFAULT_NEON_AUTH_URL, DEFAULT_NEON_DATA_API_URL } from './neonConfig';
 
@@ -13,10 +13,10 @@ const authUrl =
   (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.VITE_NEON_AUTH_URL) ||
   DEFAULT_NEON_AUTH_URL;
 
-// Use the explicit Neon Auth client for session/JWT operations that need a
-// bearer token outside the Data API. The unified client remains the canonical
-// Data API client and shares the same Neon Auth endpoint/session cookies.
-export const neonAuth = createAuthClient(authUrl, { allowAnonymous: false });
+// Neon exposes the Better Auth API publicly, but the JWT bridge used by
+// same-origin Fleet APIs is on the internal Neon Auth wrapper. Keep both
+// capabilities bound to the same auth endpoint/session.
+export const neonAuth = createInternalNeonAuth(authUrl, { allowAnonymous: false });
 
 // Initialize Neon Client with unified Auth and Data API
 export const neon = createClient({
@@ -68,7 +68,6 @@ export async function checkNeonHealth(): Promise<NeonConfigStatus> {
 
 // Data API Query helpers with graceful fallback
 export const neonDb = {
-  // 1. Fetch Contacts from Neon Data API
   async getContacts(): Promise<{ data: Contact[] | null; error: any }> {
     try {
       const { data, error } = await neon.from('contacts').select();
@@ -79,7 +78,6 @@ export const neonDb = {
     }
   },
 
-  // 2. Insert Contact to Neon Data API
   async addContact(contact: Partial<Contact>): Promise<{ data: any; error: any }> {
     try {
       const { data, error } = await neon.from('contacts').insert(contact).select();
@@ -90,7 +88,6 @@ export const neonDb = {
     }
   },
 
-  // 3. Update Contact in Neon Data API
   async updateContact(id: string, contact: Partial<Contact>): Promise<{ data: any; error: any }> {
     try {
       const { data, error } = await neon.from('contacts').update(contact).eq('id', id).select();
@@ -101,7 +98,6 @@ export const neonDb = {
     }
   },
 
-  // 4. Delete Contact in Neon Data API
   async deleteContact(id: string): Promise<{ success: boolean; error: any }> {
     try {
       const { error } = await neon.from('contacts').delete().eq('id', id);
@@ -112,13 +108,10 @@ export const neonDb = {
     }
   },
 
-  // 5. Fetch Emails from Neon Data API
   async getEmails(inbox?: string): Promise<{ data: EmailMessage[] | null; error: any }> {
     try {
       let query = neon.from('emails').select().order('created_at', { ascending: false });
-      if (inbox) {
-        query = query.eq('inbox_id', inbox);
-      }
+      if (inbox) query = query.eq('inbox_id', inbox);
       const { data, error } = await query;
       if (error) throw error;
       return { data: data as EmailMessage[], error: null };
@@ -127,7 +120,6 @@ export const neonDb = {
     }
   },
 
-  // 6. Generic Table Query for testing / exploration
   async queryTable(tableName: string, limit = 20): Promise<{ data: any; error: any }> {
     try {
       const { data, error } = await neon.from(tableName).select().limit(limit);

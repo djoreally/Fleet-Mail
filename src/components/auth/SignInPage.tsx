@@ -30,7 +30,7 @@ export function SignInPage({ onNavigate, onAuthenticated }: SignInPageProps) {
     event.preventDefault(); setLoading(true); setError('');
     try {
       setFleetWorkspaceMode(workspaceMode);
-      const result = await neonAuth.signIn.email({ email: email.trim(), password });
+      const result = await neonAuth.adapter.signIn.email({ email: email.trim(), password });
       if (result.error) throw result.error;
 
       const token = await neonAuth.getJWTToken();
