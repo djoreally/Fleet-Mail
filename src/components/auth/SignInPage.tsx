@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowRight, RadioTower, ShieldCheck, Wrench } from 'lucide-react';
 import { neon } from '../../lib/neon';
+import { setActiveNeonAuthSession } from '../../lib/neonAuthClient';
 import { captureFleetInvitationFromLocation, fleetFetch, setFleetWorkspaceMode, type FleetWorkspaceMode } from '../../lib/fleetApi';
 import { AuthError, AuthField, AuthShell, AuthSubmit, getAuthError, type AuthNavigation } from './AuthShell';
 
@@ -31,12 +32,21 @@ export function SignInPage({ onNavigate, onAuthenticated }: SignInPageProps) {
       setFleetWorkspaceMode(workspaceMode);
       const result = await neon.auth.signIn.email({ email: email.trim(), password });
       if (result.error) throw result.error;
+
+      // Neon Auth owns the authenticated session, while same-origin Fleet APIs
+      // read the bearer token from the Fleet session bridge. Synchronize the
+      // freshly issued JWT before the first /api/access authorization check.
+      const token = await neon.auth.getJWTToken();
+      if (!token) throw new Error('Sign-in completed but no Fleet session token was issued.');
+      setActiveNeonAuthSession(token, null);
+
       const accessResponse=await fleetFetch('/api/access');
       const access=await accessResponse.json().catch(()=>({}));
       if(!accessResponse.ok) throw new Error(access.error||'That workspace is not available to this account.');
       onAuthenticated?.();
       onNavigate('/app');
     } catch (reason) {
+      setActiveNeonAuthSession(null, null);
       setFleetWorkspaceMode('auto');
       setError(getAuthError(reason, 'We could not sign you in. Check your email, password, and workspace access.'));
     }
