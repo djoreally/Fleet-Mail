@@ -1,4 +1,5 @@
 import { createClient } from '@neondatabase/neon-js';
+import { createAuthClient } from '@neondatabase/neon-js/auth';
 import { Contact, EmailMessage } from '../types';
 import { DEFAULT_NEON_AUTH_URL, DEFAULT_NEON_DATA_API_URL } from './neonConfig';
 
@@ -11,6 +12,11 @@ const dataApiUrl =
 const authUrl =
   (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.VITE_NEON_AUTH_URL) ||
   DEFAULT_NEON_AUTH_URL;
+
+// Use the explicit Neon Auth client for session/JWT operations that need a
+// bearer token outside the Data API. The unified client remains the canonical
+// Data API client and shares the same Neon Auth endpoint/session cookies.
+export const neonAuth = createAuthClient(authUrl, { allowAnonymous: false });
 
 // Initialize Neon Client with unified Auth and Data API
 export const neon = createClient({

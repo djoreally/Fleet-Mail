@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowRight, RadioTower, ShieldCheck, Wrench } from 'lucide-react';
-import { neon } from '../../lib/neon';
+import { neonAuth } from '../../lib/neon';
 import { setActiveNeonAuthSession } from '../../lib/neonAuthClient';
 import { captureFleetInvitationFromLocation, fleetFetch, setFleetWorkspaceMode, type FleetWorkspaceMode } from '../../lib/fleetApi';
 import { AuthError, AuthField, AuthShell, AuthSubmit, getAuthError, type AuthNavigation } from './AuthShell';
@@ -30,13 +30,10 @@ export function SignInPage({ onNavigate, onAuthenticated }: SignInPageProps) {
     event.preventDefault(); setLoading(true); setError('');
     try {
       setFleetWorkspaceMode(workspaceMode);
-      const result = await neon.auth.signIn.email({ email: email.trim(), password });
+      const result = await neonAuth.signIn.email({ email: email.trim(), password });
       if (result.error) throw result.error;
 
-      // Neon Auth owns the authenticated session, while same-origin Fleet APIs
-      // read the bearer token from the Fleet session bridge. Synchronize the
-      // freshly issued JWT before the first /api/access authorization check.
-      const token = await neon.auth.getJwtToken();
+      const token = await neonAuth.getJWTToken();
       if (!token) throw new Error('Sign-in completed but no Fleet session token was issued.');
       setActiveNeonAuthSession(token, null);
 
