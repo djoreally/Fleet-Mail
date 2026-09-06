@@ -14,8 +14,18 @@ describe('sign-in session bridge',()=>{
     expect(accessIndex).toBeGreaterThan(persistIndex);
   });
 
-  it('clears a partial Fleet session when sign-in validation fails',()=>{
-    const source=readFileSync('src/components/auth/SignInPage.tsx','utf8');
-    expect(source).toContain('setActiveNeonAuthSession(null, null)');
+  it('restores the same JWT bearer bridge instead of persisting the opaque Better Auth session token',()=>{
+    const source=readFileSync('src/components/AppShell.tsx','utf8');
+    expect(source).toContain("import { neon, neonAuth } from '../lib/neon'");
+    expect(source).toContain('const jwt = nextSession ? await neonAuth.getJWTToken() : null');
+    expect(source).toContain('setActiveNeonAuthSession(jwt, nextUser)');
+    expect(source).not.toContain('sessionToken(nextSession)');
+  });
+
+  it('clears partial and signed-out Fleet bearer state',()=>{
+    const signIn=readFileSync('src/components/auth/SignInPage.tsx','utf8');
+    const shell=readFileSync('src/components/AppShell.tsx','utf8');
+    expect(signIn).toContain('setActiveNeonAuthSession(null, null)');
+    expect(shell).toContain('setActiveNeonAuthSession(null, null)');
   });
 });

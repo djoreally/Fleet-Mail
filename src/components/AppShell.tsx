@@ -1,5 +1,5 @@
 import React, { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
-import { neon } from '../lib/neon';
+import { neon, neonAuth } from '../lib/neon';
 import { APP_ROUTES, navigate, usePathname } from '../lib/navigation';
 import { setActiveNeonAuthSession } from '../lib/neonAuthClient';
 
@@ -66,16 +66,6 @@ function sessionUser(session: FleetAuthSession | null): FleetAuthUser | null {
   return session?.user && typeof session.user === 'object' ? session.user : null;
 }
 
-function sessionToken(session: FleetAuthSession | null): string | null {
-  if (!session) return null;
-  const value = session as Record<string, unknown>;
-  for (const key of ['token', 'accessToken', 'access_token', 'jwt']) {
-    if (typeof value[key] === 'string' && value[key]) return value[key] as string;
-  }
-  if (value.session && typeof value.session === 'object') return sessionToken(value.session as FleetAuthSession);
-  return null;
-}
-
 function renderScreen(screen: Screen, context: AppShellContext): ReactNode {
   return typeof screen === 'function' ? screen(context) : screen;
 }
@@ -100,8 +90,11 @@ export function AppShell({
     try {
       const response = await neon.auth.getSession();
       const nextSession = extractSession(response);
+      const nextUser = sessionUser(nextSession);
+      const jwt = nextSession ? await neonAuth.getJWTToken() : null;
+      if (nextSession && !jwt) throw new Error('Your Fleet API session could not be restored. Please sign in again.');
       setSession(nextSession);
-      setActiveNeonAuthSession(sessionToken(nextSession), sessionUser(nextSession));
+      setActiveNeonAuthSession(jwt, nextUser);
       return nextSession;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to restore your session.';
@@ -120,6 +113,7 @@ export function AppShell({
       await neon.auth.signOut();
     } finally {
       setSession(null);
+      setActiveNeonAuthSession(null, null);
       navigate(APP_ROUTES.signIn, { replace: true });
     }
   }, []);
@@ -129,7 +123,7 @@ export function AppShell({
   }, [refreshSession]);
 
   const user = sessionUser(session);
-  const isAuthenticated = Boolean(session && (user || 'token' in session || 'session' in session));
+  const isAuthenticated = Boolean(session && user);
   const context = useMemo<AppShellContext>(() => ({
     session,
     user,
