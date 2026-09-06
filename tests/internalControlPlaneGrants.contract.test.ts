@@ -8,10 +8,17 @@ describe('internal database control-plane grants',()=>{
     expect(source).toContain('REVOKE ALL PRIVILEGES ON TABLE public.app_schema_migrations FROM PUBLIC, authenticated, anonymous');
   });
 
-  it('revokes client access from the durable agent execution ledger',()=>{
+  it('revokes client access from internal control-plane tables',()=>{
     const migration=readFileSync('src/db/migrations/0007_internal_control_plane_grants.sql','utf8');
     expect(migration).toContain('REVOKE ALL PRIVILEGES ON TABLE public.agent_action_executions FROM authenticated');
     expect(migration).toContain('REVOKE ALL PRIVILEGES ON TABLE public.agent_action_executions FROM anonymous');
     expect(migration).toContain('REVOKE ALL PRIVILEGES ON TABLE public.app_schema_migrations FROM authenticated');
+  });
+
+  it('blocks Data API roles from the legacy database-tree helper',()=>{
+    const migration=readFileSync('src/db/migrations/0007_internal_control_plane_grants.sql','utf8');
+    expect(migration).toContain('REVOKE ALL PRIVILEGES ON FUNCTION public.show_db_tree() FROM PUBLIC');
+    expect(migration).toContain('REVOKE ALL PRIVILEGES ON FUNCTION public.show_db_tree() FROM authenticated');
+    expect(migration).toContain('REVOKE ALL PRIVILEGES ON FUNCTION public.show_db_tree() FROM anonymous');
   });
 });
