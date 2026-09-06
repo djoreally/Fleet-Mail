@@ -1,0 +1,9 @@
+-- Keep internal Fleet control-plane ledgers inaccessible to Data API client roles.
+-- These tables are written only by the trusted server/database owner path.
+REVOKE ALL PRIVILEGES ON TABLE public.agent_action_executions FROM PUBLIC;
+REVOKE ALL PRIVILEGES ON TABLE public.agent_action_executions FROM authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.agent_action_executions FROM anonymous;
+
+REVOKE ALL PRIVILEGES ON TABLE public.app_schema_migrations FROM PUBLIC;
+REVOKE ALL PRIVILEGES ON TABLE public.app_schema_migrations FROM authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.app_schema_migrations FROM anonymous;

@@ -12,6 +12,7 @@ const MIGRATIONS = [
   '0004_prospecting_foundation.sql',
   '0005_team_invitations.sql',
   '0006_agent_action_executions.sql',
+  '0007_internal_control_plane_grants.sql',
 ] as const;
 
 export async function runDrizzleMigration(customDatabaseUrl?: string, options: { allowRuntime?: boolean } = {}): Promise<MigrationReport> {
@@ -23,6 +24,9 @@ export async function runDrizzleMigration(customDatabaseUrl?: string, options: {
   const applied: string[] = []; const skipped: string[] = [];
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS public.app_schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`);
+    // Neon Data API can establish default privileges for newly created public tables.
+    // The migration ledger is server-internal, so remove all client-role grants on every run.
+    await pool.query('REVOKE ALL PRIVILEGES ON TABLE public.app_schema_migrations FROM PUBLIC, authenticated, anonymous');
     for (const name of MIGRATIONS) {
       const existing = await pool.query('SELECT 1 FROM public.app_schema_migrations WHERE name = $1 LIMIT 1', [name]);
       if (existing.rowCount) { skipped.push(name); continue; }
