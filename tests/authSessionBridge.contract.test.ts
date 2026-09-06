@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 describe('sign-in session bridge',()=>{
   it('persists the Neon JWT before validating Fleet API access',()=>{
     const source=readFileSync('src/components/auth/SignInPage.tsx','utf8');
-    const tokenIndex=source.indexOf('const token = await neon.auth.getJWTToken()');
+    const tokenIndex=source.indexOf('const token = await neon.auth.getJwtToken()');
     const persistIndex=source.indexOf('setActiveNeonAuthSession(token, null)');
     const accessIndex=source.indexOf("fleetFetch('/api/access')");
     expect(tokenIndex).toBeGreaterThan(-1);

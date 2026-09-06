@@ -36,7 +36,7 @@ export function SignInPage({ onNavigate, onAuthenticated }: SignInPageProps) {
       // Neon Auth owns the authenticated session, while same-origin Fleet APIs
       // read the bearer token from the Fleet session bridge. Synchronize the
       // freshly issued JWT before the first /api/access authorization check.
-      const token = await neon.auth.getJWTToken();
+      const token = await neon.auth.getJwtToken();
       if (!token) throw new Error('Sign-in completed but no Fleet session token was issued.');
       setActiveNeonAuthSession(token, null);
 
