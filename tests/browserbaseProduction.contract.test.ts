@@ -10,7 +10,7 @@ describe('Browserbase production implementation contract', () => {
   it('pins the current Stagehand v4 runtime requirements', () => {
     expect(packageJson.dependencies['@browserbasehq/stagehand']).toBe('4.0.2');
     expect(packageJson.dependencies.zod).toBeTruthy();
-    expect(packageJson.engines.node).toBe('>=22.18.0');
+    expect(packageJson.engines.node).toBe('24.x');
   });
 
   it('uses Browserbase REST API endpoints for Search and Fetch', () => {
