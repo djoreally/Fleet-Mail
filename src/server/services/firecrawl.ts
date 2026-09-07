@@ -38,16 +38,46 @@ export async function searchWeb(query:string, options:{limit?:number;location?:s
   return raw.slice(0,limit).map((item:any)=>({url:String(item.url||item.metadata?.sourceURL||''),title:String(item.title||item.metadata?.title||''),description:String(item.description||''),content:String(item.markdown||item.content||'').slice(0,12000)})).filter((item:SearchResult)=>/^https:\/\//i.test(item.url));
 }
 
+async function fallbackWebsiteSearch(url:URL):Promise<CrawledPage[]> {
+  const hostname=url.hostname.replace(/^www\./i,'');
+  const results=await searchWeb(`site:${hostname} company services about contact fleet vehicles`,{limit:8});
+  return results
+    .filter(item=>{try{const host=new URL(item.url).hostname.replace(/^www\./i,'');return host===hostname||host.endsWith(`.${hostname}`);}catch{return false;}})
+    .map(item=>({url:item.url,title:item.title||hostname,content:[item.description,item.content].filter(Boolean).join('\n\n').slice(0,12000)}))
+    .filter(page=>page.content)
+    .slice(0,5);
+}
+
 export async function crawlWebsite(rawUrl: string): Promise<CrawlResult> {
   const url = await validatePublicUrl(rawUrl);
-  const started = await firecrawl('/crawl', { method: 'POST', body: JSON.stringify({ url: url.href, limit: 5, maxDiscoveryDepth: 1, sitemap: 'skip', ignoreQueryParameters: true, scrapeOptions: { formats: ['markdown'], onlyMainContent: true, mobile: true } }) });
-  if (!started.id) throw new Error('Firecrawl did not return a crawl job.');
-  const deadline = Date.now() + 16_000; let result: any;
-  while (Date.now() < deadline) { result = await firecrawl(`/crawl/${encodeURIComponent(started.id)}`); if (result.status === 'completed') break; if (result.status === 'failed' || result.status === 'cancelled') throw new Error('The website crawl did not complete.'); await new Promise(resolve => setTimeout(resolve, 800)); }
-  if (result?.status !== 'completed') throw new Error('The website is still being crawled. Please try again in a moment.');
-  const pages = (Array.isArray(result.data) ? result.data : []).slice(0, 5).map((page: any) => ({ url: String(page.metadata?.sourceURL || page.metadata?.url || url.href), title: String(page.metadata?.title || page.metadata?.ogTitle || url.hostname), content: String(page.markdown || page.content || '').slice(0, 12_000) })).filter((page: CrawledPage) => page.content);
-  if (!pages.length) throw new Error('The website was crawled, but no readable page content was returned.');
-  return { sourceUrl: url.href, pages };
+  let result:any=null;
+  try{
+    const started = await firecrawl('/crawl', { method: 'POST', body: JSON.stringify({ url: url.href, limit: 5, maxDiscoveryDepth: 1, sitemap: 'skip', ignoreQueryParameters: true, scrapeOptions: { formats: ['markdown'], onlyMainContent: true, mobile: true } }) });
+    if (!started.id) throw new Error('Firecrawl did not return a crawl job.');
+    const deadline = Date.now() + 16_000;
+    while (Date.now() < deadline) {
+      result = await firecrawl(`/crawl/${encodeURIComponent(started.id)}`);
+      if (result.status === 'completed') break;
+      if (result.status === 'failed' || result.status === 'cancelled') break;
+      await new Promise(resolve => setTimeout(resolve, 800));
+    }
+  }catch(error){
+    console.warn('Firecrawl crawl path failed; falling back to same-domain search evidence.',error instanceof Error?error.message:error);
+  }
+
+  const pages = result?.status === 'completed'
+    ? (Array.isArray(result.data) ? result.data : []).slice(0, 5).map((page: any) => ({ url: String(page.metadata?.sourceURL || page.metadata?.url || url.href), title: String(page.metadata?.title || page.metadata?.ogTitle || url.hostname), content: String(page.markdown || page.content || '').slice(0, 12_000) })).filter((page: CrawledPage) => page.content)
+    : [];
+  if (pages.length) return { sourceUrl: url.href, pages };
+
+  const fallback=await fallbackWebsiteSearch(url);
+  if(fallback.length){
+    console.warn(`Firecrawl crawl did not produce readable pages for ${url.hostname}; using ${fallback.length} same-domain search result(s) instead.`);
+    return {sourceUrl:url.href,pages:fallback};
+  }
+  if(result?.status==='failed'||result?.status==='cancelled')throw new Error('The website crawl failed and no readable same-domain search evidence was returned.');
+  if(result?.status!=='completed')throw new Error('The website crawl did not finish and no readable same-domain search evidence was returned.');
+  throw new Error('The website was crawled, but no readable page content was returned.');
 }
 
 export function extractWebsiteUrl(message: string) { const matches = message.match(/https:\/\/[^\s<>()"']+/gi) || []; return matches[0]?.replace(/[.,;:!?]+$/, '') || null; }
