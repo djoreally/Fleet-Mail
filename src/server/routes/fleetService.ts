@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { FleetAuthError, fleetAuthFailure, requireFleetOrganization, requireFleetPermission } from '../services/fleetAuth.js';
 import { FleetServiceModelError, createCatalogService, createConnectedVehicle, createConnectedWorkOrder, createServiceAgreement, deleteInventoryPart, fleetServiceBootstrap, setAgreementService, setVehiclePart, setVehicleServiceProfile } from '../services/fleetServiceModel.js';
+import { fleetAccount360Service } from '../services/fleetAccount360.js';
 
 export const fleetServiceRouter=Router();
 const fail=(res:any,error:unknown)=>{if(error instanceof FleetAuthError)return fleetAuthFailure(res,error);if(error instanceof FleetServiceModelError)return res.status(error.status).json({error:error.message});const message=error instanceof Error?error.message:'Fleet service operation failed';return res.status(/not found/i.test(message)?404:/duplicate|unique|already|belongs/i.test(message)?409:/required|invalid|must/i.test(message)?400:500).json({error:message})};
 
 fleetServiceRouter.get('/bootstrap',async(req,res)=>{try{const org=await requireFleetOrganization(req);await requireFleetPermission(req,'fleet_accounts.view');return res.json(await fleetServiceBootstrap(org))}catch(e){return fail(res,e)}});
+fleetServiceRouter.get('/accounts/:id/overview',async(req,res)=>{try{const org=await requireFleetOrganization(req);await requireFleetPermission(req,'fleet_accounts.view');return res.json({account:await fleetAccount360Service.get(org,req.params.id)})}catch(e){return fail(res,e)}});
 fleetServiceRouter.post('/vehicles',async(req,res)=>{try{const org=await requireFleetOrganization(req);await requireFleetPermission(req,'vehicles.manage');return res.status(201).json({vehicle:await createConnectedVehicle(org,req.body??{})})}catch(e){return fail(res,e)}});
 fleetServiceRouter.post('/work-orders',async(req,res)=>{try{const org=await requireFleetOrganization(req);await requireFleetPermission(req,'work_orders.manage');return res.status(201).json({workOrder:await createConnectedWorkOrder(org,req.body??{})})}catch(e){return fail(res,e)}});
 fleetServiceRouter.post('/catalog',async(req,res)=>{try{const org=await requireFleetOrganization(req);await requireFleetPermission(req,'agreements.manage');return res.status(201).json({service:await createCatalogService(org,req.body??{})})}catch(e){return fail(res,e)}});

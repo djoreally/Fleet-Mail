@@ -39,7 +39,7 @@ async function request<T>(path:string, init?:RequestInit):Promise<T> {
 
 export const operationsApi={
   customers:(search='')=>request<{customers:CustomerRow[]}>(`/customers?search=${encodeURIComponent(search)}`),
-  customerOverview:(id:string)=>request<{account:FleetAccount360}>(`/customers/${encodeURIComponent(id)}/overview`),
+  customerOverview:async(id:string)=>{const response=await fleetFetch(`/api/fleet-service/accounts/${encodeURIComponent(id)}/overview`);const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||`Request failed (${response.status})`);return data as {account:FleetAccount360}},
   vehicleOverview:async(id:string)=>{const response=await fleetFetch(`/api/vehicles/${encodeURIComponent(id)}/overview`);const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||`Request failed (${response.status})`);return data as {vehicle:Vehicle360}},
   createCustomer:(body:Record<string,unknown>)=>request('/customers',{method:'POST',body:JSON.stringify(body)}),
   updateCustomer:(id:string,body:Record<string,unknown>)=>request(`/customers/${encodeURIComponent(id)}`,{method:'PUT',body:JSON.stringify(body)}),

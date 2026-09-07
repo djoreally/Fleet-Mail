@@ -1,13 +1,15 @@
 import{readFileSync}from'node:fs';import{describe,expect,it}from'vitest';
 
 describe('operational UI hierarchy',()=>{
- const fleet=readFileSync('src/components/operations/FleetServiceWorkspace.tsx','utf8');
  const accounts=readFileSync('src/components/operations/FleetAccountsWorkspace.tsx','utf8');
  const moduleView=readFileSync('src/components/FleetModuleView.tsx','utf8');
+ const operationsApi=readFileSync('src/components/operations/operationsApi.ts','utf8');
+ const fleetRoute=readFileSync('src/server/routes/fleetService.ts','utf8');
  it('makes Fleet Accounts the parent entry point',()=>{expect(accounts).toContain('Fleet customers');expect(accounts).toContain('Add Fleet Account');expect(accounts).toContain('Fleet account onboarding');expect(moduleView).toContain('customers:<FleetAccountsWorkspace/>')});
  it('onboards account then agreement then vehicle',()=>{expect(accounts).toContain('1. Create the fleet account');expect(accounts).toContain('2. Agreement, SLA & pricing rules');expect(accounts).toContain('3. Add the first vehicle');expect(accounts).toContain('/api/fleet-service/agreements');expect(accounts).toContain('/api/fleet-service/vehicles')});
- it('keeps account children attached to the account',()=>{expect(accounts).toContain('parent record for everything that follows');expect(accounts).toContain('Vehicles are created inside');expect(accounts).toContain('Open account')});
+ it('validates onboarding fields on blur before submit',()=>{expect(accounts).toContain('onBlur');expect(accounts).toContain('validateAccount');expect(accounts).toContain('validateAgreement');expect(accounts).toContain('validateVehicle');expect(accounts).toContain('Fields validate as soon as you leave them.')});
+ it('opens account detail through the canonical fleet-service route',()=>{expect(operationsApi).toContain('/api/fleet-service/accounts/');expect(fleetRoute).toContain("get('/accounts/:id/overview'");expect(fleetRoute).toContain('fleetAccount360Service.get')});
+ it('keeps global modules isolated instead of rendering the connected-service peer tabs everywhere',()=>{expect(moduleView).toContain('<ScheduleDispatchView mode="dispatch"/>');expect(moduleView).toContain('<ScheduleDispatchView mode="schedule"/>');expect(moduleView).toContain('parts:<PartsWorkspace/>');expect(moduleView).toContain("'work-orders':<WorkOrderOperationsHub/>");expect(moduleView).not.toContain('FleetServiceWorkspace')});
  it('uses blue primary product actions',()=>{expect(accounts).toContain('bg-blue-600');expect(accounts).not.toContain('bg-slate-950 px-4 text-sm font-bold text-white')});
- it('preserves deterministic service hierarchy and technician isolation',()=>{expect(fleet).toContain('Client → Vehicle → Work order → Dispatch');expect(fleet).toContain('/api/fleet-operations/appointments');expect(fleet).toContain('/api/fleet-operations/dispatch');expect(moduleView).toContain("role==='technician'?<WorkOrderOperationsHub/>")});
  it('uses explicit touch-scroll containers for wide account tables',()=>{expect(accounts).toContain('data-hscroll');expect(accounts).toContain('min-w-[820px]')});
 });
