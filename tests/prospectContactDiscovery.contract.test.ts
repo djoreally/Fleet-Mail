@@ -13,6 +13,12 @@ describe('prospect contact discovery contract',()=>{
     expect(contactDiscovery).toContain('Never invent an email');
   });
 
+  it('limits deterministic general inbox discovery to the prospect company domain',()=>{
+    expect(contactDiscovery).toContain('companyDomainEmail');
+    expect(contactDiscovery).toContain('domain===hostname||domain.endsWith(`.${hostname}`)');
+    expect(contactDiscovery).toContain('generalAddress(supportedEmails,hostname)');
+  });
+
   it('persists usable general email and named prospect contacts with provenance',()=>{
     expect(contactDiscovery).toContain('generalEmail');
     expect(contactDiscovery).toContain('db.update(prospects)');
