@@ -4,6 +4,7 @@ import { prospectingService } from '../services/prospecting.js';
 import { prospectOutreachService } from '../services/prospectOutreach.js';
 import { prospectDiscoveryService } from '../services/prospectDiscovery.js';
 import { prospectInboxSyncService } from '../services/prospectInboxSync.js';
+import { prospectContactDiscoveryService } from '../services/prospectContactDiscovery.js';
 import { createAgentActionProposal } from '../services/agentActions.js';
 
 export const prospectingRouter=Router();
@@ -18,6 +19,6 @@ prospectingRouter.get('/prospects/:id',async(req,res)=>{try{const org=await requ
 prospectingRouter.patch('/prospects/:id',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.json({prospect:await prospectingService.update(org,req.params.id,req.body??{})});}catch(e){return fail(res,e)}});
 prospectingRouter.post('/prospects/:id/contacts',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.status(201).json({contact:await prospectingService.addContact(org,req.params.id,req.body??{})});}catch(e){return fail(res,e)}});
 prospectingRouter.post('/prospects/:id/activities',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.status(201).json({activity:await prospectingService.addActivity(org,req.params.id,req.body??{})});}catch(e){return fail(res,e)}});
-prospectingRouter.post('/prospects/:id/research',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.json({prospect:await prospectingService.research(org,req.params.id)});}catch(e){return fail(res,e)}});
+prospectingRouter.post('/prospects/:id/research',async(req,res)=>{try{const org=await requireFleetOrganization(req);await prospectingService.research(org,req.params.id);const contactDiscovery=await prospectContactDiscoveryService.enrich(org,req.params.id);const refreshed=await prospectingService.get(org,req.params.id);return res.json({prospect:refreshed.prospect,contactDiscovery});}catch(e){return fail(res,e)}});
 prospectingRouter.post('/prospects/:id/outreach/draft',async(req,res)=>{try{const org=await requireFleetOrganization(req);const draft=await prospectOutreachService.draft(org,req.params.id,req.body??{});return res.json({draft,action:createAgentActionProposal('email.send',draft,org)});}catch(e){return fail(res,e)}});
 prospectingRouter.post('/prospects/:id/convert',async(req,res)=>{try{const org=await requireFleetOrganization(req);await prospectingService.get(org,req.params.id);return res.status(202).json({action:createAgentActionProposal('fleet.prospect.convert',{prospectId:req.params.id},org)});}catch(e){return fail(res,e)}});
