@@ -29,6 +29,8 @@ export interface AICompletionOptions {
   maxTokens?: number;
 }
 
+const ATLAS_FALLBACK_CHAT_MODEL = 'deepseek-ai/deepseek-v3.2';
+
 function contentText(content: unknown) {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return content == null ? '' : JSON.stringify(content);
@@ -146,6 +148,22 @@ async function callAtlasToolCompletion(atlasKey: string, messages: AIMessage[], 
   };
 }
 
+async function callAtlasChat(atlasKey: string, model: string, messages: AIMessage[], options: AICompletionOptions) {
+  return fetch(`${serverConfig.atlasCloudBaseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${atlasKey.trim()}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: options.temperature ?? 0.3,
+      max_tokens: options.maxTokens ?? 4096,
+    }),
+  });
+}
+
 export async function callAICompletion(messages: AIMessage[], systemPrompt?: string, options: AICompletionOptions = {}) {
   const atlasKey = process.env.ATLASCLOUD_API_KEY;
   if (!atlasKey || atlasKey === 'your-atlascloud-api-key' || atlasKey.trim() === '') {
@@ -158,27 +176,26 @@ export async function callAICompletion(messages: AIMessage[], systemPrompt?: str
     return callAtlasToolCompletion(atlasKey, messages, systemPrompt, options);
   }
 
-  const formattedMessages = systemPrompt
+  const formattedMessages: AIMessage[] = systemPrompt
     ? [{ role: 'system', content: systemPrompt }, ...messages]
     : messages;
-  const response = await fetch(`${serverConfig.atlasCloudBaseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${atlasKey.trim()}`,
-    },
-    body: JSON.stringify({
-      model: serverConfig.atlasCloudModel,
-      messages: formattedMessages,
-      temperature: options.temperature ?? 0.3,
-      max_tokens: options.maxTokens ?? 4096,
-    }),
-  });
+
+  let model = serverConfig.atlasCloudModel;
+  let response = await callAtlasChat(atlasKey, model, formattedMessages, options);
+  let firstError = '';
+
+  if (!response.ok && [400, 404, 422].includes(response.status) && model !== ATLAS_FALLBACK_CHAT_MODEL) {
+    firstError = await response.text();
+    console.warn(`AtlasCloud chat model ${model} rejected request (${response.status}); retrying with ${ATLAS_FALLBACK_CHAT_MODEL}.`);
+    model = ATLAS_FALLBACK_CHAT_MODEL;
+    response = await callAtlasChat(atlasKey, model, formattedMessages, options);
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
     console.error('AtlasCloud API error:', response.status, errorText);
-    throw new Error(`AtlasCloud API error (${response.status}): ${errorText}`);
+    const context = firstError ? ` Primary model error: ${firstError}` : '';
+    throw new Error(`AtlasCloud API error (${response.status}): ${errorText}${context}`);
   }
 
   const data = await response.json();
@@ -187,7 +204,7 @@ export async function callAICompletion(messages: AIMessage[], systemPrompt?: str
     content: typeof message.content === 'string' ? message.content : '',
     toolCalls: [] as AIToolCall[],
     finishReason: data.choices?.[0]?.finish_reason || null,
-    model: data.model || serverConfig.atlasCloudModel,
+    model: data.model || model,
     provider: 'AtlasCloud AI',
   };
 }
