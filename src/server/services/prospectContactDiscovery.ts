@@ -16,8 +16,10 @@ function evidenceEmails(text:string){
   return Array.from(new Set((text.match(EMAIL_RE)||[]).map(email=>email.toLowerCase()))).slice(0,40);
 }
 
-function generalAddress(emails:string[]){
-  return emails.find(email=>GENERAL_LOCAL_PARTS.has(email.split('@')[0]||''))||null;
+function emailDomain(email:string){return (email.split('@')[1]||'').toLowerCase().replace(/^www\./i,'');}
+function companyDomainEmail(email:string,hostname:string){const domain=emailDomain(email);return domain===hostname||domain.endsWith(`.${hostname}`);}
+function generalAddress(emails:string[],hostname:string){
+  return emails.find(email=>companyDomainEmail(email,hostname)&&GENERAL_LOCAL_PARTS.has(email.split('@')[0]||''))||null;
 }
 
 function safeJson(content:string){
@@ -57,7 +59,7 @@ export class ProspectContactDiscoveryService {
     }
 
     const requestedGeneral=normalizeEmail(parsed?.generalEmail);
-    const deterministicGeneral=generalAddress(supportedEmails);
+    const deterministicGeneral=generalAddress(supportedEmails,hostname);
     const generalEmail=(validEmail(requestedGeneral)&&supportedSet.has(requestedGeneral)?requestedGeneral:null)||deterministicGeneral||prospect.generalEmail||null;
     if(generalEmail&&generalEmail!==prospect.generalEmail){
       await db.update(prospects).set({generalEmail,updatedAt:new Date(),metadata:{...(prospect.metadata as Record<string,unknown>),contactDiscovery:{source:'firecrawl_search',query,sourceCount:sources.length,lastRunAt:new Date().toISOString()}}}).where(and(eq(prospects.organizationId,organizationId),eq(prospects.id,prospectId)));
