@@ -4,10 +4,10 @@ import type { WebhookSignatureVerifier } from "./ports.js";
 import type { AgentMailWebhookEnvelope } from "./types.js";
 import type { AgentMailTenantWebhookRouter } from "./webhookRouter.js";
 
-export interface AuthenticatedTenantRequest extends Request {
+export type AuthenticatedTenantRequest = Request & {
   auth?: { tenantId: string; canManageIntegrations: boolean };
   rawBody?: Buffer;
-}
+};
 
 export function createAgentMailTenantRouter(deps: {
   onboarding: AgentMailTenantOnboardingService;
