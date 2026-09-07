@@ -13,5 +13,5 @@ describe('canonical Fleet service hierarchy',()=>{
  it('synchronizes dispatch assignment back to work_orders.technician_id',()=>{expect(schedule).toContain('syncWorkOrderTechnician');expect(service).toContain('UPDATE work_orders SET technician_id=$3')});
  it('blocks orphan forms and scopes vehicle selection to the client',()=>{expect(ui).toContain('A vehicle cannot be created without a client');expect(ui).toContain('vehicles.filter(x=>x.customer_id===customerId)');expect(ui).toContain('Client first. Vehicle second. Agreement and pricing third.')});
  it('uses safe parts deletion and exposes vehicle part assignment',()=>{expect(service).toContain("SELECT 1 FROM part_usage");expect(service).toContain('DELETE FROM vehicle_parts');expect(ui).toContain('/parts/${part}');expect(ui).toContain('Assign part')});
- it('keeps technician work orders on the isolated execution workspace',()=>{expect(moduleView).toContain("role==='technician'?<WorkOrderOperationsHub/>");expect(moduleView).toContain('<FleetServiceWorkspace initialTab="work-orders"/>')});
+ it('keeps work orders on the isolated work-order execution workspace',()=>{expect(moduleView).toContain("'work-orders':<WorkOrderOperationsHub/>");expect(moduleView).not.toContain('FleetServiceWorkspace')});
 });
