@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 describe('Technician OS access boundaries', () => {
   const access = readFileSync('src/server/services/technicianAccess.ts','utf8');
   const operations = readFileSync('src/server/routes/operations.ts','utf8');
+  const paging = readFileSync('src/server/services/operationalListPaging.ts','utf8');
   const execution = readFileSync('src/server/routes/workOrderExecution.ts','utf8');
   const completion = readFileSync('src/server/routes/workOrderCompletion.ts','utf8');
   const dashboard = readFileSync('src/components/DashboardView.tsx','utf8');
@@ -14,9 +15,10 @@ describe('Technician OS access boundaries', () => {
     expect(access).toContain('Technicians may only access work orders assigned to them');
   });
 
-  it('filters technician work-order lists before returning them', () => {
-    expect(operations).toContain('scope.isTechnician ? rows.filter');
-    expect(operations).toContain('row.technicianId === scope.technicianId');
+  it('scopes technician work-order pages inside the database query before returning rows', () => {
+    expect(operations.replace(/\s+/g,'')).toContain('technicianId:scope.isTechnician?scope.technicianId:null');
+    expect(paging).toContain('if(options.technicianId)');
+    expect(paging).toContain('x.technician_id=$');
   });
 
   it('separates technician execution from authorization decisions', () => {
