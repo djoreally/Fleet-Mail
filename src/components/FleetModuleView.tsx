@@ -1,6 +1,6 @@
 import React from'react';
 import{MaintenanceWorkspace}from'./operations/OperationsWorkspace';
-import{WorkOrderOperationsHub}from'./operations/TechnicianWorkspace';
+import{CertifiedWorkOrderModule}from'./operations/CertifiedWorkOrderModule';
 import{FleetAccountsCertifiedWorkspace}from'./operations/FleetAccountsCertifiedWorkspace';
 import{PartsWorkspace}from'./operations/PartsWorkspace';
 import{ProspectCommandCenter}from'./operations/ProspectCommandCenter';
@@ -13,4 +13,4 @@ export type FleetModuleId='vehicles'|'work-orders'|'maintenance'|'schedule'|'dis
 interface FleetModuleViewProps{module:FleetModuleId;onOpenInbox:()=>void}
 const ProspectingLive=()=> <div className="flex min-h-0 flex-1 flex-col"><ProspectInboxSyncButton/><ProspectCommandCenter/></div>;
 /** Fleet Accounts owns customer onboarding and recovery before child operational records are opened. */
-export const FleetModuleView:React.FC<FleetModuleViewProps>=({module})=>{const screens:Record<FleetModuleId,React.ReactNode>={vehicles:<ConnectedVehicleWorkspace/>,'work-orders':<WorkOrderOperationsHub/>,maintenance:<MaintenanceWorkspace/>,schedule:<ScheduleDispatchView mode="schedule"/>,dispatch:<ScheduleDispatchView mode="dispatch"/>,parts:<PartsWorkspace/>,prospects:<ProspectingLive/>,customers:<FleetAccountsCertifiedWorkspace/>,financials:<FinancialsLiveView/>,documents:<DocumentsLiveView/>};return <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[#f7f8fa]">{screens[module]}</div>};
+export const FleetModuleView:React.FC<FleetModuleViewProps>=({module})=>{const screens:Record<FleetModuleId,React.ReactNode>={vehicles:<ConnectedVehicleWorkspace/>,'work-orders':<CertifiedWorkOrderModule/>,maintenance:<MaintenanceWorkspace/>,schedule:<ScheduleDispatchView mode="schedule"/>,dispatch:<ScheduleDispatchView mode="dispatch"/>,parts:<PartsWorkspace/>,prospects:<ProspectingLive/>,customers:<FleetAccountsCertifiedWorkspace/>,financials:<FinancialsLiveView/>,documents:<DocumentsLiveView/>};return <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[#f7f8fa]">{screens[module]}</div>};
