@@ -9,8 +9,27 @@ export const prospectManagementRouter = Router();
 const fail=(res:any,error:unknown)=>{
   if(error instanceof FleetAuthError)return fleetAuthFailure(res,error);
   const message=error instanceof Error?error.message:'Prospect operation failed';
-  return res.status(/not found/i.test(message)?404:/required|invalid|must|valid|cursor/i.test(message)?400:500).json({error:message});
+  console.warn('Prospect operation rejected:',message);
+  return res.status(/not found/i.test(message)?404:/required|invalid|must|valid|cursor/i.test(message)?400:500).json({error:message,code:'prospect_write_rejected'});
 };
+
+function normalizeProspectInput(input:Record<string,unknown>={}){
+  const next={...input};
+  if(typeof next.companyName==='string')next.companyName=next.companyName.trim();
+  if(typeof next.website==='string'){
+    const raw=next.website.trim();
+    if(!raw)next.website=null;
+    else next.website=/^https?:\/\//i.test(raw)?raw:`https://${raw}`;
+  }
+  for(const key of ['industry','serviceArea','phone','generalEmail'] as const){if(typeof next[key]==='string'&&!String(next[key]).trim())next[key]=null;}
+  for(const key of ['estimatedFleetSize','opportunityValue','qualificationScore','probability'] as const){
+    const value=next[key];
+    if(value===''||value===null||value===undefined){next[key]=null;continue;}
+    const numeric=Number(String(value).replace(/[$,]/g,''));
+    if(Number.isFinite(numeric))next[key]=numeric;
+  }
+  return next;
+}
 
 prospectManagementRouter.get('/prospects',async(req,res)=>{
   try{
@@ -24,7 +43,7 @@ prospectManagementRouter.post('/prospects',async(req,res)=>{
   try{
     const organizationId=await requireFleetOrganization(req);
     await requireFleetPermission(req,'prospects.manage');
-    return res.status(201).json({prospect:await prospectingService.create(organizationId,req.body??{})});
+    return res.status(201).json({prospect:await prospectingService.create(organizationId,normalizeProspectInput(req.body??{}))});
   }catch(error){return fail(res,error)}
 });
 
@@ -32,7 +51,7 @@ prospectManagementRouter.patch('/prospects/:id',async(req,res)=>{
   try{
     const organizationId=await requireFleetOrganization(req);
     await requireFleetPermission(req,'prospects.manage');
-    return res.json({prospect:await prospectingService.update(organizationId,req.params.id,req.body??{})});
+    return res.json({prospect:await prospectingService.update(organizationId,req.params.id,normalizeProspectInput(req.body??{}))});
   }catch(error){return fail(res,error)}
 });
 
