@@ -8,7 +8,7 @@ const fleetModule = readFileSync('src/components/FleetModuleView.tsx', 'utf8');
 
 describe('technician execution contract', () => {
   it('exposes the technician workflow from the canonical work-order module', () => {
-    expect(fleetModule).toContain('WorkOrderOperationsHub');
+    expect(fleetModule).toContain('CertifiedWorkOrderModule');
     expect(technicianUi).toContain('Inspection → Authorization → Service');
     expect(technicianUi).toContain('/inspections/');
     expect(technicianUi).toContain('/authorizations/');
