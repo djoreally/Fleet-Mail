@@ -3,13 +3,14 @@ import { completeMaintenance, createMaintenanceSchedule, createWorkOrder, delete
 import { getTechnicianWorkOrderContext } from '../services/technicianContext.js';
 import { FleetAuthError, fleetAuthFailure, requireFleetOrganization, requireFleetPermission } from '../services/fleetAuth.js';
 import { assertAssignedWorkOrder, getTechnicianScope } from '../services/technicianAccess.js';
+import { assertWorkOrderDeletable, sanitizeWorkOrderManagementPatch } from '../services/workOrderManagementGuard.js';
 
 export const operationsRouter = Router();
 
 function failure(res: Parameters<typeof fleetAuthFailure>[0], error: unknown) {
   if (error instanceof FleetAuthError) return fleetAuthFailure(res, error);
   const message = error instanceof Error ? error.message : 'Operations request failed';
-  const status = /required|invalid/i.test(message) ? 400 : /not found/i.test(message) ? 404 : 500;
+  const status = /required|invalid|lifecycle|cannot|only draft|execution history/i.test(message) ? 400 : /not found/i.test(message) ? 404 : 500;
   return res.status(status).json({ error: message });
 }
 
@@ -32,11 +33,11 @@ operationsRouter.post('/work-orders', async (req, res) => {
   catch (error) { failure(res, error); }
 });
 operationsRouter.patch('/work-orders/:id', async (req, res) => {
-  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.manage'); res.json({ workOrder: await updateWorkOrder(organizationId, req.params.id, req.body ?? {}) }); }
+  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.manage'); const patch=sanitizeWorkOrderManagementPatch(req.body ?? {}); res.json({ workOrder: await updateWorkOrder(organizationId, req.params.id, patch) }); }
   catch (error) { failure(res, error); }
 });
 operationsRouter.delete('/work-orders/:id', async (req, res) => {
-  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.manage'); res.json({ deleted: await deleteWorkOrder(organizationId, req.params.id) }); }
+  try { const organizationId = await requireFleetOrganization(req); await requireFleetPermission(req, 'work_orders.manage'); await assertWorkOrderDeletable(organizationId,req.params.id); res.json({ deleted: await deleteWorkOrder(organizationId, req.params.id) }); }
   catch (error) { failure(res, error); }
 });
 operationsRouter.get('/maintenance', async (req, res) => {
