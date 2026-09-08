@@ -3,10 +3,11 @@ import { operationsDataService } from '../services/operationsData.js';
 import { fleetAccount360Service } from '../services/fleetAccount360.js';
 import { FleetAuthError, fleetAuthFailure, requireFleetOrganization, requireFleetPermission } from '../services/fleetAuth.js';
 import { deleteInventoryPart } from '../services/fleetServiceModel.js';
+import { pagedCustomers } from '../services/operationalListPaging.js';
 
 export const customerPartsRouter = Router();
-const fail = (res:any,error:unknown)=>{if(error instanceof FleetAuthError)return fleetAuthFailure(res,error);const message=error instanceof Error?error.message:'Operation failed';return res.status(/not found/i.test(message)?404:/service history|belongs|already/i.test(message)?409:/required|must|numeric/i.test(message)?400:500).json({error:message})};
-customerPartsRouter.get('/customers',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.json({customers:await operationsDataService.listCustomers(org,String(req.query.search??''))})}catch(e){return fail(res,e)}});
+const fail = (res:any,error:unknown)=>{if(error instanceof FleetAuthError)return fleetAuthFailure(res,error);const message=error instanceof Error?error.message:'Operation failed';return res.status(/not found/i.test(message)?404:/service history|belongs|already/i.test(message)?409:/required|must|numeric|cursor/i.test(message)?400:500).json({error:message})};
+customerPartsRouter.get('/customers',async(req,res)=>{try{const org=await requireFleetOrganization(req);const page=await pagedCustomers(org,{search:req.query.search??req.query.q,cursor:req.query.cursor,limit:req.query.limit});return res.json({customers:page.items,nextCursor:page.nextCursor,hasMore:page.hasMore})}catch(e){return fail(res,e)}});
 customerPartsRouter.get('/customers/:id/overview',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.json({account:await fleetAccount360Service.get(org,req.params.id)})}catch(e){return fail(res,e)}});
 customerPartsRouter.post('/customers',async(req,res)=>{try{const org=await requireFleetOrganization(req);await requireFleetPermission(req,'fleet_accounts.manage');return res.status(201).json({customer:await operationsDataService.createCustomer(org,req.body??{})})}catch(e){return fail(res,e)}});
 customerPartsRouter.put('/customers/:id',async(req,res)=>{try{const org=await requireFleetOrganization(req);await requireFleetPermission(req,'fleet_accounts.manage');return res.json({customer:await operationsDataService.updateCustomer(org,req.params.id,req.body??{})})}catch(e){return fail(res,e)}});
