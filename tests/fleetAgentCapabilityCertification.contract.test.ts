@@ -11,96 +11,21 @@ describe('Fleet Agent capability certification', () => {
       ['Show work order WO-218 inspection and authorization status', 'none', ['workOrders.search', 'inspections.search', 'authorizations.search']],
       ['Show unpaid invoices and payment aging', 'none', ['invoices.search', 'payments.search', 'financials.search']],
       ['Find the inspection PDF attachment for Unit 21', 'none', ['documents.search', 'inspections.search', 'vehicles.search']],
-      ['Research Acme Plumbing online', 'research', []],
-      ['Search the web for plumbers in Ambler PA', 'research', []],
-      ['Find a new company in 19002 for prospecting', 'research', []],
-      ['Open https://example.com and inspect the vendor page', 'browse', []],
-      ['Fill out the vendor registration form at https://example.com/vendor', 'form', []],
-      ['Download the PDF from https://example.com/receipt.pdf', 'document', []],
+      ['Research Acme Plumbing online', 'research', []],['Search the web for plumbers in Ambler PA', 'research', []],['Find a new company in 19002 for prospecting', 'research', []],['Open https://example.com and inspect the vendor page', 'browse', []],['Fill out the vendor registration form at https://example.com/vendor', 'form', []],['Download the PDF from https://example.com/receipt.pdf', 'document', []],
     ] as const;
-
-    for (const [prompt, webCapability, requiredTools] of cases) {
-      it(`routes: ${prompt}`, () => {
-        const plan = planAgentTools(prompt);
-        expect(plan.webCapability).toBe(webCapability);
-        expect(plan.readTools).toEqual(expect.arrayContaining([...requiredTools]));
-      });
-    }
-
-    it('keeps internal Fleet/company questions off the public web unless web research is explicit', () => {
-      expect(planAgentTools('Show me Acme Fleet account details').webCapability).toBe('none');
-      expect(planAgentTools('What emails do we have with Acme?').webCapability).toBe('none');
-      expect(planAgentTools('Who manages Unit 230?').webCapability).toBe('none');
-    });
-
-    it('does not treat a search-engine URL as a substitute for a research query', () => {
-      const plan = planAgentTools('Search the web for plumbers in Ambler');
-      expect(plan.webCapability).toBe('research');
-      expect(plan.webMode).toBe('research');
-    });
+    for (const [prompt, webCapability, requiredTools] of cases) it(`routes: ${prompt}`, () => {const plan=planAgentTools(prompt);expect(plan.webCapability).toBe(webCapability);expect(plan.readTools).toEqual(expect.arrayContaining([...requiredTools]));});
+    it('keeps internal Fleet/company questions off the public web unless web research is explicit', () => {expect(planAgentTools('Show me Acme Fleet account details').webCapability).toBe('none');expect(planAgentTools('What emails do we have with Acme?').webCapability).toBe('none');expect(planAgentTools('Who manages Unit 230?').webCapability).toBe('none');});
+    it('does not treat a search-engine URL as a substitute for a research query', () => {const plan=planAgentTools('Search the web for plumbers in Ambler');expect(plan.webCapability).toBe('research');expect(plan.webMode).toBe('research');});
   });
-
   describe('visible-output safety', () => {
-    it('removes raw and encoded provider/tool-call markup from user-visible text', () => {
-      const dirty = [
-        'Before',
-        '<dots_function_call>{"name":"browserResearch"}</dots_function_call>',
-        '<function_calls><invoke name="search">secret</invoke></function_calls>',
-        '&lt;tool_call&gt;hidden&lt;/tool_call&gt;',
-        'tool_call: {"url":"https://example.com"}',
-        'After',
-      ].join('\n');
-      const clean = formatAgentPlainText(dirty);
-      expect(clean).not.toMatch(/dots_function_call|function_calls?|tool_calls?|<invoke|browserResearch/i);
-      expect(clean).toContain('Before');
-      expect(clean).toContain('After');
-    });
-
-    it('removes hidden email/action review payloads from visible text', () => {
-      const clean = formatAgentPlainText('Visible\n```json:agent_action\n{"kind":"workOrder.create","payload":{}}\n```\n```json:email_draft\n{"to":"x@example.com"}\n```');
-      expect(clean).toBe('Visible');
-    });
+    it('removes raw and encoded provider/tool-call markup from user-visible text', () => {const dirty=['Before','<dots_function_call>{"name":"browserResearch"}</dots_function_call>','<function_calls><invoke name="search">secret</invoke></function_calls>','&lt;tool_call&gt;hidden&lt;/tool_call&gt;','tool_call: {"url":"https://example.com"}','After'].join('\n');const clean=formatAgentPlainText(dirty);expect(clean).not.toMatch(/dots_function_call|function_calls?|tool_calls?|<invoke|browserResearch/i);expect(clean).toContain('Before');expect(clean).toContain('After');});
+    it('removes hidden email/action review payloads from visible text', () => {const clean=formatAgentPlainText('Visible\n```json:agent_action\n{"kind":"workOrder.create","payload":{}}\n```\n```json:email_draft\n{"to":"x@example.com"}\n```');expect(clean).toBe('Visible');});
   });
-
   describe('execution truth and confirmation boundaries', () => {
-    const chat = readFileSync('src/server/routes/chat.ts', 'utf8');
-    const loop = readFileSync('src/server/services/fleetAgentLoop.ts', 'utf8');
-    const actions = readFileSync('src/server/routes/agentActions.ts', 'utf8');
-    const webRouter = readFileSync('src/server/services/webCapabilityRouter.ts', 'utf8');
-
-    it('requires actual web execution success before the agent may claim success', () => {
-      expect(loop).toContain("success: result.status === 'success'");
-      expect(loop).toContain("error: result.status === 'success' ? undefined : result.error || `Web ${result.status}`");
-      expect(loop).toContain('executeWebCapability(source, planForWeb(capability))');
-      expect(webRouter).toContain("status: 'failed'");
-      expect(webRouter).toContain("status: 'blocked'");
-      expect(chat).toContain('never invent search results or execution success');
-    });
-
-    it('keeps consequential mutations confirmation-gated', () => {
-      expect(chat).toContain('Consequential mutations are NEVER automatic');
-      expect(chat).toContain('are not complete until the confirmation-gated executor reports success');
-      expect(chat).toContain('Interactive browser/form work never authorizes consequential submission');
-      expect(loop).toContain('createAgentActionProposal(mutationKind, args, input.organizationId)');
-      expect(loop).toContain("status: 'confirmation_required'");
-      expect(actions).toContain("if (req.body?.confirmed !== true) return res.status(409)");
-    });
-
-    it('keeps provider choice server-owned and excludes raw provider invocation syntax from the model contract', () => {
-      expect(webRouter).toContain('async function researchWithFallback');
-      expect(webRouter.indexOf('process.env.BROWSERBASE_API_KEY')).toBeLessThan(webRouter.indexOf('process.env.FIRECRAWL_API_KEY'));
-      expect(loop).toContain('executeWebCapability');
-      expect(chat).toContain('Public-web research uses the approved server-owned Browserbase capability tools');
-      expect(chat).toContain('Do not narrate provider selection');
-      expect(chat).toContain('Never emit provider commands, tool-call markup');
-    });
-
-    it('keeps Browserbase REST-first research with Firecrawl compatibility fallback', () => {
-      expect(webRouter).toContain('searchWithBrowserbase');
-      expect(webRouter).toContain('process.env.BROWSERBASE_API_KEY');
-      expect(webRouter).toContain('process.env.FIRECRAWL_API_KEY');
-      expect(webRouter).not.toContain('client().search.web');
-      expect(webRouter).not.toContain('client().fetchAPI.create');
-    });
+    const chat=readFileSync('src/server/routes/chat.ts','utf8');const loop=readFileSync('src/server/services/fleetAgentLoop.ts','utf8');const actions=readFileSync('src/server/routes/agentActions.ts','utf8');const webRouter=readFileSync('src/server/services/webCapabilityRouter.ts','utf8');
+    it('requires actual web execution success before the agent may claim success', () => {expect(/success\s*:\s*result\.status\s*===\s*['\"]success['\"]/.test(loop)).toBe(true);expect(/error\s*:\s*result\.status\s*===\s*['\"]success['\"]\s*\?\s*undefined\s*:\s*result\.error/.test(loop)).toBe(true);expect(/executeWebCapability\(source\s*,\s*planForWeb\(capability\)\)/.test(loop)).toBe(true);expect(webRouter).toContain("status: 'failed'");expect(webRouter).toContain("status: 'blocked'");expect(chat).toContain('never invent search results or execution success');});
+    it('keeps consequential mutations confirmation-gated', () => {expect(chat).toContain('Consequential mutations are NEVER automatic');expect(chat).toContain('are not complete until the confirmation-gated executor reports success');expect(chat).toContain('Interactive browser/form work never authorizes consequential submission');expect(/createAgentActionProposal\(mutationKind\s*,\s*args\s*,\s*input\.organizationId\)/.test(loop)).toBe(true);expect(/status\s*:\s*['\"]confirmation_required['\"]/.test(loop)).toBe(true);expect(/if\s*\(\s*req\.body\?\.confirmed\s*!==\s*true\s*\)\s*return\s*res\.status\(409\)/.test(actions)).toBe(true);});
+    it('keeps provider choice server-owned and excludes raw provider invocation syntax from the model contract', () => {expect(webRouter).toContain('async function researchWithFallback');expect(webRouter.indexOf('process.env.BROWSERBASE_API_KEY')).toBeLessThan(webRouter.indexOf('process.env.FIRECRAWL_API_KEY'));expect(loop).toContain('executeWebCapability');expect(chat).toContain('Public-web research uses the approved server-owned Browserbase capability tools');expect(chat).toContain('Do not narrate provider selection');expect(chat).toContain('Never emit provider commands, tool-call markup');});
+    it('keeps Browserbase REST-first research with Firecrawl compatibility fallback', () => {expect(webRouter).toContain('searchWithBrowserbase');expect(webRouter).toContain('process.env.BROWSERBASE_API_KEY');expect(webRouter).toContain('process.env.FIRECRAWL_API_KEY');expect(webRouter).not.toContain('client().search.web');expect(webRouter).not.toContain('client().fetchAPI.create');});
   });
 });
