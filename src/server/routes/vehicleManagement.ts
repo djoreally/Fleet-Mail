@@ -1,14 +1,23 @@
 import { Router } from 'express';
 import { createVehicle, deleteVehicle, importVehicles, updateVehicle, VehicleStoreError } from '../services/vehicleStore.js';
 import { FleetAuthError, fleetAuthFailure, requireFleetOrganization, requireFleetPermission } from '../services/fleetAuth.js';
+import { pagedVehicles } from '../services/operationalListPaging.js';
 
 export const vehicleManagementRouter = Router();
 
 function fail(res:any,error:unknown){
   if(error instanceof FleetAuthError)return fleetAuthFailure(res,error);
-  const status=error instanceof VehicleStoreError?error.status:500;
+  const status=error instanceof VehicleStoreError?error.status:/cursor/i.test(error instanceof Error?error.message:'')?400:500;
   return res.status(status).json({error:error instanceof Error?error.message:'Vehicle operation failed'});
 }
+
+vehicleManagementRouter.get('/vehicles',async(req,res)=>{
+  try{
+    const org=await requireFleetOrganization(req);
+    const page=await pagedVehicles(org,{search:req.query.search??req.query.q,cursor:req.query.cursor,limit:req.query.limit});
+    return res.json({organizationId:org,vehicles:page.items,nextCursor:page.nextCursor,hasMore:page.hasMore});
+  }catch(error){return fail(res,error)}
+});
 
 vehicleManagementRouter.post('/vehicles',async(req,res)=>{
   try{
