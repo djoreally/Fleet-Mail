@@ -2,14 +2,23 @@ import { Pool } from '@neondatabase/serverless';
 import { Router } from 'express';
 import { FleetAuthError, fleetAuthFailure, requireFleetOrganization, requireFleetPermission } from '../services/fleetAuth.js';
 import { prospectingService } from '../services/prospecting.js';
+import { pagedProspects } from '../services/operationalListPaging.js';
 
 export const prospectManagementRouter = Router();
 
 const fail=(res:any,error:unknown)=>{
   if(error instanceof FleetAuthError)return fleetAuthFailure(res,error);
   const message=error instanceof Error?error.message:'Prospect operation failed';
-  return res.status(/not found/i.test(message)?404:/required|invalid|must|valid/i.test(message)?400:500).json({error:message});
+  return res.status(/not found/i.test(message)?404:/required|invalid|must|valid|cursor/i.test(message)?400:500).json({error:message});
 };
+
+prospectManagementRouter.get('/prospects',async(req,res)=>{
+  try{
+    const organizationId=await requireFleetOrganization(req);
+    const page=await pagedProspects(organizationId,{search:req.query.search??req.query.q,stage:req.query.stage,cursor:req.query.cursor,limit:req.query.limit});
+    return res.json({prospects:page.items,nextCursor:page.nextCursor,hasMore:page.hasMore});
+  }catch(error){return fail(res,error)}
+});
 
 prospectManagementRouter.post('/prospects',async(req,res)=>{
   try{
