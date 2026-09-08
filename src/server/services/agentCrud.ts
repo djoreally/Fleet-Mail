@@ -10,7 +10,11 @@ async function withPool<T>(work:(pool:Pool)=>Promise<T>){const pool=new Pool({co
 function stripUndefined(input:Record<string,unknown>){return Object.fromEntries(Object.entries(input).filter(([,v])=>v!==undefined))}
 
 export const agentCrud={
-  updateAccount(organizationId:string,input:Record<string,unknown>){const {customerId,...patch}=input;return operationsDataService.updateCustomer(organizationId,String(customerId),stripUndefined(patch));},
+  async updateAccount(organizationId:string,input:Record<string,unknown>){
+    const id=String(input.customerId||'');const current=(await operationsDataService.listCustomers(organizationId)).find((row:any)=>String(row.id)===id);if(!current)throw new Error('Customer not found');
+    const merged={name:input.name??current.name,accountNumber:input.accountNumber??current.accountNumber,primaryContactName:input.primaryContactName??current.primaryContactName,primaryContactEmail:input.primaryContactEmail??current.primaryContactEmail,billingContactName:current.billingContactName,billingEmail:current.billingEmail,billingAddressLine1:(current.billingAddress as any)?.line1||'',billingAddressLine2:(current.billingAddress as any)?.line2||'',billingCity:(current.billingAddress as any)?.city||'',billingState:(current.billingAddress as any)?.state||'',billingPostalCode:(current.billingAddress as any)?.postalCode||'',billingCountry:(current.billingAddress as any)?.country||'',poRequired:current.poRequired,defaultPoNumber:current.defaultPoNumber,paymentTerms:current.paymentTerms,taxStatus:current.taxStatus,phone:input.phone??current.phone,status:input.status??current.status,notes:input.notes??current.notes};
+    return operationsDataService.updateCustomer(organizationId,id,merged);
+  },
   deleteAccount(organizationId:string,input:Record<string,unknown>){return operationsDataService.deleteCustomer(organizationId,String(input.customerId));},
 
   async updateVehicle(organizationId:string,input:Record<string,unknown>){
