@@ -1,16 +1,17 @@
 import { Router } from 'express';
-import { completeMaintenance, createMaintenanceSchedule, createWorkOrder, deleteWorkOrder, listMaintenance, listWorkOrders, updateWorkOrder } from '../services/operationsPersistence.js';
+import { completeMaintenance, createMaintenanceSchedule, createWorkOrder, deleteWorkOrder, listMaintenance, updateWorkOrder } from '../services/operationsPersistence.js';
 import { getTechnicianWorkOrderContext } from '../services/technicianContext.js';
 import { FleetAuthError, fleetAuthFailure, requireFleetOrganization, requireFleetPermission } from '../services/fleetAuth.js';
 import { assertAssignedWorkOrder, getTechnicianScope } from '../services/technicianAccess.js';
 import { assertWorkOrderDeletable, sanitizeWorkOrderManagementPatch } from '../services/workOrderManagementGuard.js';
+import { pagedWorkOrders } from '../services/operationalListPaging.js';
 
 export const operationsRouter = Router();
 
 function failure(res: Parameters<typeof fleetAuthFailure>[0], error: unknown) {
   if (error instanceof FleetAuthError) return fleetAuthFailure(res, error);
   const message = error instanceof Error ? error.message : 'Operations request failed';
-  const status = /required|invalid|lifecycle|cannot|only draft|execution history/i.test(message) ? 400 : /not found/i.test(message) ? 404 : 500;
+  const status = /required|invalid|lifecycle|cannot|only draft|execution history|cursor/i.test(message) ? 400 : /not found/i.test(message) ? 404 : 500;
   return res.status(status).json({ error: message });
 }
 
@@ -19,9 +20,8 @@ operationsRouter.get('/work-orders', async (req, res) => {
     const organizationId = await requireFleetOrganization(req);
     await requireFleetPermission(req, 'work_orders.view');
     const scope = await getTechnicianScope(req, organizationId);
-    const rows = await listWorkOrders(organizationId);
-    const workOrders = scope.isTechnician ? rows.filter(row => row.technicianId === scope.technicianId) : rows;
-    res.json({ organizationId, workOrders });
+    const page = await pagedWorkOrders(organizationId,{search:req.query.search??req.query.q,cursor:req.query.cursor,limit:req.query.limit,technicianId:scope.isTechnician?scope.technicianId:null});
+    res.json({ organizationId, workOrders:page.items,nextCursor:page.nextCursor,hasMore:page.hasMore });
   } catch (error) { failure(res, error); }
 });
 operationsRouter.get('/work-orders/:id/technician-context', async (req, res) => {
