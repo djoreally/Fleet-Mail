@@ -34,7 +34,7 @@ export class ScheduleDispatchService {
     if (!token) throw new FleetOperationsError('Authentication is required', 401);
     const response = await fetch(`${this.dataApiUrl}/${path}`, {
       ...init,
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, Prefer: 'return=representation', ...init.headers },
+      headers: { Accept: 'application/json', 'Content-Type':'application/json', Authorization:`Bearer ${token}`, Prefer:'return=representation', ...init.headers },
     });
     const body = await response.text();
     if (!response.ok) {
@@ -51,16 +51,25 @@ export class ScheduleDispatchService {
   private async assertReference(token: string, org: string, table: 'customers' | 'vehicles' | 'work_orders' | 'technicians' | 'resources', value: unknown, label: string) {
     if (value === undefined || value === null || value === '') return null;
     const id = cleanId(value, label);
-    const q = new URLSearchParams({ select: 'id', id: `eq.${id}`, organization_id: `eq.${org}`, limit: '1' });
+    const q = new URLSearchParams({ select:'id', id:`eq.${id}`, organization_id:`eq.${org}`, limit:'1' });
     const rows = await this.request<JsonRecord[]>(token, `${table}?${q}`);
     if (!rows.length) throw new FleetOperationsError(`${label} was not found in this organization`, 404);
     return id;
   }
 
+  private async assertWorkOrderSchedule(token:string,org:string,workOrderId:unknown,excludeId?:string) {
+    if (!workOrderId) return;
+    const id=cleanId(workOrderId,'workOrderId');
+    const q=new URLSearchParams({select:'id,status,work_order_id',organization_id:`eq.${org}`,work_order_id:`eq.${id}`,limit:'200'});
+    const rows=await this.request<JsonRecord[]>(token,`appointments?${q}`);
+    const conflict=rows.find(row=>row.id!==excludeId&&!inactiveStatuses.has(String(row.status)));
+    if(conflict)throw new FleetOperationsError('Work order already has an active appointment',409);
+  }
+
   private async assertAppointmentSlot(token: string, org: string, startsAt: string, endsAt: string, vehicleId?: unknown, excludeId?: string) {
     if (!vehicleId) return;
     const vehicle = cleanId(vehicleId, 'vehicleId');
-    const q = new URLSearchParams({ select: 'id,status,starts_at,ends_at', organization_id: `eq.${org}`, vehicle_id: `eq.${vehicle}`, limit: '200' });
+    const q = new URLSearchParams({ select:'id,status,starts_at,ends_at', organization_id:`eq.${org}`, vehicle_id:`eq.${vehicle}`, limit:'200' });
     const rows = await this.request<JsonRecord[]>(token, `appointments?${q}`);
     const conflict = rows.find((row) => row.id !== excludeId && !inactiveStatuses.has(String(row.status)) && overlaps(startsAt, endsAt, row.starts_at, row.ends_at));
     if (conflict) throw new FleetOperationsError('Vehicle already has an overlapping appointment', 409);
@@ -68,14 +77,14 @@ export class ScheduleDispatchService {
 
   private async appointmentWindow(token: string, org: string, appointmentId: unknown) {
     const id = cleanId(appointmentId, 'appointmentId');
-    const q = new URLSearchParams({ select: 'id,starts_at,ends_at,vehicle_id', id: `eq.${id}`, organization_id: `eq.${org}`, limit: '1' });
+    const q = new URLSearchParams({ select:'id,starts_at,ends_at,vehicle_id,work_order_id', id:`eq.${id}`, organization_id:`eq.${org}`, limit:'1' });
     const [row] = await this.request<JsonRecord[]>(token, `appointments?${q}`);
     if (!row) throw new FleetOperationsError('Appointment not found', 404);
-    return { id, startsAt: isoDate(row.starts_at, 'appointment startsAt'), endsAt: isoDate(row.ends_at, 'appointment endsAt'), vehicleId: row.vehicle_id ? String(row.vehicle_id) : null };
+    return { id, startsAt:isoDate(row.starts_at,'appointment startsAt'), endsAt:isoDate(row.ends_at,'appointment endsAt'), vehicleId:row.vehicle_id?String(row.vehicle_id):null, workOrderId:row.work_order_id?String(row.work_order_id):null };
   }
 
   private async assertDispatchSlot(token: string, org: string, technicianId: string, resourceId: string | null, startsAt: string, endsAt: string, excludeId?: string) {
-    const q = new URLSearchParams({ select: 'id,status,technician_id,resource_id,starts_at,appointment_id', organization_id: `eq.${org}`, limit: '200' });
+    const q = new URLSearchParams({ select:'id,status,technician_id,resource_id,starts_at,appointment_id', organization_id:`eq.${org}`, limit:'200' });
     const rows = await this.request<JsonRecord[]>(token, `dispatch_assignments?${q}`);
     for (const row of rows) {
       if (row.id === excludeId || ['completed','cancelled'].includes(String(row.status))) continue;
@@ -91,7 +100,7 @@ export class ScheduleDispatchService {
       }
     }
 
-    const availabilityQuery = new URLSearchParams({ select: 'id,technician_id,resource_id,starts_at,ends_at,status', organization_id: `eq.${org}`, limit: '200' });
+    const availabilityQuery = new URLSearchParams({ select:'id,technician_id,resource_id,starts_at,ends_at,status', organization_id:`eq.${org}`, limit:'200' });
     const availabilityRows = await this.request<JsonRecord[]>(token, `availability?${availabilityQuery}`);
     const relevant = availabilityRows.filter((row) => String(row.technician_id || '') === technicianId || (resourceId && String(row.resource_id || '') === resourceId));
     const blocking = relevant.find((row) => String(row.status) !== 'available' && overlaps(startsAt, endsAt, row.starts_at, row.ends_at));
@@ -100,7 +109,7 @@ export class ScheduleDispatchService {
 
   async listAppointments(organizationId: unknown, authorization?: string, from?: unknown, to?: unknown) {
     const org = this.org(organizationId); const token = this.token(authorization);
-    const query = new URLSearchParams({ select: '*', organization_id: `eq.${org}`, order: 'starts_at.asc', limit: '200' });
+    const query = new URLSearchParams({ select:'*', organization_id:`eq.${org}`, order:'starts_at.asc', limit:'200' });
     if (from) query.set('starts_at', `gte.${isoDate(from, 'from')}`);
     if (to) query.append('starts_at', `lt.${isoDate(to, 'to')}`);
     return this.request<JsonRecord[]>(token, `appointments?${query}`);
@@ -116,9 +125,10 @@ export class ScheduleDispatchService {
       this.assertReference(token, org, 'vehicles', input.vehicleId, 'vehicleId'),
       this.assertReference(token, org, 'work_orders', input.workOrderId, 'workOrderId'),
     ]);
+    await this.assertWorkOrderSchedule(token,org,workOrderId);
     await this.assertAppointmentSlot(token, org, startsAt, endsAt, vehicleId);
-    const payload = { id: randomUUID(), organization_id: org, work_order_id: workOrderId, customer_id: customerId, vehicle_id: vehicleId, location_id: input.locationId || null, starts_at: startsAt, ends_at: endsAt, status, notes: input.notes || null };
-    return this.request<JsonRecord[]>(token, 'appointments', { method: 'POST', body: JSON.stringify(payload) });
+    const payload = { id:randomUUID(), organization_id:org, work_order_id:workOrderId, customer_id:customerId, vehicle_id:vehicleId, location_id:input.locationId||null, starts_at:startsAt, ends_at:endsAt, status, notes:input.notes||null };
+    return this.request<JsonRecord[]>(token, 'appointments', { method:'POST', body:JSON.stringify(payload) });
   }
 
   async updateAppointment(organizationId: unknown, authorization: string | undefined, idValue: unknown, input: JsonRecord) {
@@ -134,19 +144,21 @@ export class ScheduleDispatchService {
     if (input.customerId !== undefined) await this.assertReference(token, org, 'customers', input.customerId, 'customerId');
     if (input.workOrderId !== undefined) await this.assertReference(token, org, 'work_orders', input.workOrderId, 'workOrderId');
     if (input.vehicleId !== undefined) await this.assertReference(token, org, 'vehicles', input.vehicleId, 'vehicleId');
+    const workOrderId=input.workOrderId!==undefined?input.workOrderId:current.workOrderId;
     const vehicleId = input.vehicleId !== undefined ? input.vehicleId : current.vehicleId;
+    if(workOrderId)await this.assertWorkOrderSchedule(token,org,workOrderId,id);
     if (vehicleId) await this.assertAppointmentSlot(token, org, startsAt, endsAt, vehicleId, id);
-    return this.request<JsonRecord[]>(token, `appointments?id=eq.${id}&organization_id=eq.${org}`, { method: 'PATCH', body: JSON.stringify(payload) });
+    return this.request<JsonRecord[]>(token, `appointments?id=eq.${id}&organization_id=eq.${org}`, { method:'PATCH', body:JSON.stringify(payload) });
   }
 
   async deleteAppointment(organizationId: unknown, authorization: string | undefined, idValue: unknown) {
     const org = this.org(organizationId); const id = cleanId(idValue, 'appointmentId');
-    await this.request<unknown>(this.token(authorization), `appointments?id=eq.${id}&organization_id=eq.${org}`, { method: 'DELETE' });
-    return { deleted: true, id };
+    await this.request<unknown>(this.token(authorization), `appointments?id=eq.${id}&organization_id=eq.${org}`, { method:'DELETE' });
+    return { deleted:true, id };
   }
 
   private async dispatchState(token: string, org: string, dispatchId: string) {
-    const q = new URLSearchParams({ select: 'id,technician_id,resource_id,appointment_id,starts_at,status', id: `eq.${dispatchId}`, organization_id: `eq.${org}`, limit: '1' });
+    const q = new URLSearchParams({ select:'id,technician_id,resource_id,appointment_id,starts_at,status', id:`eq.${dispatchId}`, organization_id:`eq.${org}`, limit:'1' });
     const [row] = await this.request<JsonRecord[]>(token, `dispatch_assignments?${q}`);
     if (!row) throw new FleetOperationsError('Dispatch not found', 404);
     return row;
@@ -154,7 +166,7 @@ export class ScheduleDispatchService {
 
   async listDispatch(organizationId: unknown, authorization?: string) {
     const org = this.org(organizationId); const token = this.token(authorization);
-    const q = new URLSearchParams({ select: '*', organization_id: `eq.${org}`, order: 'created_at.desc', limit: '200' });
+    const q = new URLSearchParams({ select:'*', organization_id:`eq.${org}`, order:'created_at.desc', limit:'200' });
     return this.request<JsonRecord[]>(token, `dispatch_assignments?${q}`);
   }
 
@@ -170,8 +182,8 @@ export class ScheduleDispatchService {
     const appointment = input.appointmentId ? await this.appointmentWindow(token, org, input.appointmentId) : null;
     const startsAt = input.startsAt ? isoDate(input.startsAt, 'startsAt') : appointment?.startsAt || null;
     if (startsAt && appointment) await this.assertDispatchSlot(token, org, technicianId, resourceId, startsAt, appointment.endsAt);
-    const payload = { id: randomUUID(), organization_id: org, work_order_id: workOrderId, appointment_id: input.appointmentId || null, technician_id: technicianId, resource_id: resourceId, status, starts_at: startsAt };
-    return this.request<JsonRecord[]>(token, 'dispatch_assignments', { method: 'POST', body: JSON.stringify(payload) });
+    const payload = { id:randomUUID(), organization_id:org, work_order_id:workOrderId, appointment_id:input.appointmentId||null, technician_id:technicianId, resource_id:resourceId, status, starts_at:startsAt };
+    return this.request<JsonRecord[]>(token, 'dispatch_assignments', { method:'POST', body:JSON.stringify(payload) });
   }
 
   async updateDispatch(organizationId: unknown, authorization: string | undefined, idValue: unknown, input: JsonRecord) {
@@ -190,13 +202,13 @@ export class ScheduleDispatchService {
       const start = input.startsAt !== undefined && input.startsAt ? isoDate(input.startsAt, 'startsAt') : appointment.startsAt;
       await this.assertDispatchSlot(token, org, cleanId(technicianId, 'technicianId'), resourceId ? cleanId(resourceId, 'resourceId') : null, start, appointment.endsAt, id);
     }
-    return this.request<JsonRecord[]>(token, `dispatch_assignments?id=eq.${id}&organization_id=eq.${org}`, { method: 'PATCH', body: JSON.stringify(payload) });
+    return this.request<JsonRecord[]>(token, `dispatch_assignments?id=eq.${id}&organization_id=eq.${org}`, { method:'PATCH', body:JSON.stringify(payload) });
   }
 
   async deleteDispatch(organizationId: unknown, authorization: string | undefined, idValue: unknown) {
     const org = this.org(organizationId); const id = cleanId(idValue, 'dispatchId');
-    await this.request<unknown>(this.token(authorization), `dispatch_assignments?id=eq.${id}&organization_id=eq.${org}`, { method: 'DELETE' });
-    return { deleted: true, id };
+    await this.request<unknown>(this.token(authorization), `dispatch_assignments?id=eq.${id}&organization_id=eq.${org}`, { method:'DELETE' });
+    return { deleted:true, id };
   }
 
   async references(organizationId: unknown, authorization?: string) {
