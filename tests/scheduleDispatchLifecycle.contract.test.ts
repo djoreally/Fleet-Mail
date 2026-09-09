@@ -40,7 +40,7 @@ describe('schedule and dispatch lifecycle contract', () => {
     expect(ui).toContain('No work orders available. Create a work order first.');
     expect(ui).not.toContain("select('Customer','customerId'");
     expect(ui).not.toContain("select('Vehicle','vehicleId'");
-    expect(ui).toContain('Canonical service chain');
+    expect(ui).toContain('Service chain');
     expect(ui).toContain("`/work-orders/${encodeURIComponent(String(form.workOrderId))}/appointment`");
     expect(route).toContain("post('/work-orders/:workOrderId/appointment'");
   });
