@@ -21,8 +21,17 @@ function normalizeAgreementInput(input:Record<string,unknown>={}){
  return next;
 }
 
+const bindCustomer=(customerId:string,input:Record<string,unknown>={})=>({...input,customerId});
+
 fleetServiceRouter.get('/bootstrap',async(req,res)=>{try{const org=await requireFleetOrganization(req);await requireFleetPermission(req,'fleet_accounts.view');return res.json(await fleetServiceBootstrap(org))}catch(e){return fail(res,e)}});
 fleetServiceRouter.get('/account-overview',async(req,res)=>{try{const org=await requireFleetOrganization(req);await requireFleetPermission(req,'fleet_accounts.view');const id=String(req.query.id??'').trim();if(!id)return res.status(400).json({error:'Fleet account id is required'});return res.json({account:await fleetAccount360Service.get(org,id)})}catch(e){return fail(res,e)}});
+
+// Canonical parent-bound onboarding writes. The URL owns the relationship;
+// callers cannot accidentally omit or override customerId in a JSON payload.
+fleetServiceRouter.post('/accounts/:customerId/agreements',async(req,res)=>{try{const org=await requireFleetOrganization(req);await requireFleetPermission(req,'agreements.manage');return res.status(201).json({agreement:await createServiceAgreement(org,normalizeAgreementInput(bindCustomer(req.params.customerId,req.body??{})))})}catch(e){return fail(res,e)}});
+fleetServiceRouter.post('/accounts/:customerId/vehicles',async(req,res)=>{try{const org=await requireFleetOrganization(req);await requireFleetPermission(req,'vehicles.manage');return res.status(201).json({vehicle:await createConnectedVehicle(org,bindCustomer(req.params.customerId,req.body??{}))})}catch(e){return fail(res,e)}});
+
+// Backward-compatible legacy endpoints. New UI code must use the parent-bound routes above.
 fleetServiceRouter.post('/vehicles',async(req,res)=>{try{const org=await requireFleetOrganization(req);await requireFleetPermission(req,'vehicles.manage');return res.status(201).json({vehicle:await createConnectedVehicle(org,req.body??{})})}catch(e){return fail(res,e)}});
 fleetServiceRouter.post('/work-orders',async(req,res)=>{try{const org=await requireFleetOrganization(req);await requireFleetPermission(req,'work_orders.manage');return res.status(201).json({workOrder:await createConnectedWorkOrder(org,req.body??{})})}catch(e){return fail(res,e)}});
 fleetServiceRouter.post('/catalog',async(req,res)=>{try{const org=await requireFleetOrganization(req);await requireFleetPermission(req,'agreements.manage');return res.status(201).json({service:await createCatalogService(org,req.body??{})})}catch(e){return fail(res,e)}});
