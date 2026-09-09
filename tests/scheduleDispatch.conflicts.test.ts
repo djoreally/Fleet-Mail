@@ -15,7 +15,7 @@ describe('Schedule and dispatch conflict contract', () => {
   it('checks availability in the same organization', () => {
     const source = readFileSync('src/server/services/scheduleDispatch.ts', 'utf8');
     expect(source).toContain("availability?${availabilityQuery}");
-    expect(source).toContain('organization_id: `eq.${org}`');
+    expect(source).toMatch(/organization_id\s*:\s*`eq\.\$\{org\}`/);
     expect(source).toContain('unavailable for the requested time');
   });
 });
