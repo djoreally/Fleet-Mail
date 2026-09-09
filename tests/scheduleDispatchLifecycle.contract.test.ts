@@ -35,12 +35,14 @@ describe('schedule and dispatch lifecycle contract', () => {
     expect(route).toContain("status:'assigned'");
   });
 
-  it('makes the schedule form work-order-first instead of collecting contradictory account and vehicle ids', () => {
-    const scheduleBranch = ui.slice(ui.indexOf("mode==='schedule'?<>"), ui.indexOf(":<>{select('Work order','workOrderId'", ui.indexOf("mode==='schedule'?<>")));
-    expect(scheduleBranch).toContain("select('Work order','workOrderId'");
-    expect(scheduleBranch).not.toContain("select('Customer','customerId'");
-    expect(scheduleBranch).not.toContain("select('Vehicle','vehicleId'");
-    expect(scheduleBranch).toContain('Canonical service chain');
+  it('makes the schedule form work-order-first with a mobile-safe picker and canonical command', () => {
+    expect(ui).toContain('Picker label="Work order"');
+    expect(ui).toContain('No work orders available. Create a work order first.');
+    expect(ui).not.toContain("select('Customer','customerId'");
+    expect(ui).not.toContain("select('Vehicle','vehicleId'");
+    expect(ui).toContain('Canonical service chain');
+    expect(ui).toContain("`/work-orders/${encodeURIComponent(String(form.workOrderId))}/appointment`");
+    expect(route).toContain("post('/work-orders/:workOrderId/appointment'");
   });
 
   it('prevents hard deletion of dispatch history', () => {
