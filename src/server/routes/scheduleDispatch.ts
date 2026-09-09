@@ -9,8 +9,20 @@ const service = new ScheduleDispatchService();
 const context = async (req: Request) => ({ organizationId: await requireFleetOrganization(req), authorization: req.header('authorization') });
 const run = (handler: (req: Request) => Promise<unknown>, created = false) => async (req: Request, res: Response) => { try { const result = await handler(req); return res.status(created ? 201 : 200).json(result); } catch (error) { if (error instanceof FleetOperationsError) return res.status(error.status).json({ error: error.message }); return fleetAuthFailure(res, error); } };
 
+async function createAppointmentForWorkOrder(req:Request,workOrderId:string){
+ await requireFleetPermission(req,'schedule.manage');
+ const c=await context(req);
+ const chain=await workOrderChain(c.organizationId,workOrderId);
+ const result=await service.createAppointment(c.organizationId,c.authorization,{...(req.body??{}),workOrderId:chain.id,customerId:chain.customer_id,vehicleId:chain.vehicle_id,locationId:req.body?.locationId||chain.location_id||null,status:'scheduled'});
+ await syncWorkOrderSchedule(c.organizationId,workOrderId,req.body?.startsAt);
+ return result;
+}
+
 scheduleDispatchRouter.get('/appointments', run(async req=>{await requireFleetPermission(req, 'schedule.view');const c=await context(req);return service.listAppointments(c.organizationId,c.authorization,req.query.from,req.query.to)}));
-scheduleDispatchRouter.post('/appointments', run(async req=>{await requireFleetPermission(req, 'schedule.manage');const c=await context(req);const workOrderId=String(req.body?.workOrderId||'');if(!workOrderId)throw new FleetOperationsError('workOrderId is required',400);const chain=await workOrderChain(c.organizationId,workOrderId);const result=await service.createAppointment(c.organizationId,c.authorization,{...(req.body??{}),workOrderId:chain.id,customerId:chain.customer_id,vehicleId:chain.vehicle_id,locationId:req.body?.locationId||chain.location_id||null,status:'scheduled'});await syncWorkOrderSchedule(c.organizationId,workOrderId,req.body?.startsAt);return result},true));
+// Canonical scheduling command: the Work Order URL owns customer/vehicle relationship state.
+scheduleDispatchRouter.post('/work-orders/:workOrderId/appointment',run(async req=>createAppointmentForWorkOrder(req,req.params.workOrderId),true));
+// Backward compatibility for older clients.
+scheduleDispatchRouter.post('/appointments', run(async req=>{const workOrderId=String(req.body?.workOrderId||'');if(!workOrderId)throw new FleetOperationsError('workOrderId is required',400);return createAppointmentForWorkOrder(req,workOrderId)},true));
 scheduleDispatchRouter.patch('/appointments/:id', run(async req=>{await requireFleetPermission(req, 'schedule.manage');const c=await context(req);const body={...(req.body??{})};if(body.workOrderId){const chain=await workOrderChain(c.organizationId,String(body.workOrderId));Object.assign(body,{workOrderId:chain.id,customerId:chain.customer_id,vehicleId:chain.vehicle_id});}return service.updateAppointment(c.organizationId,c.authorization,req.params.id,body)}));
 scheduleDispatchRouter.delete('/appointments/:id', run(async req=>{await requireFleetPermission(req, 'schedule.manage');const c=await context(req);return service.deleteAppointment(c.organizationId,c.authorization,req.params.id)}));
 
