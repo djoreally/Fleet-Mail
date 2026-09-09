@@ -13,9 +13,19 @@ const fail=(res:any,error:unknown)=>{
   return res.status(/not found/i.test(message)?404:/required|invalid|must|valid|cursor/i.test(message)?400:500).json({error:message,code:'prospect_write_rejected'});
 };
 
-function normalizeProspectInput(input:Record<string,unknown>={}){
-  const next={...input};
-  if(typeof next.companyName==='string')next.companyName=next.companyName.trim();
+function asRecord(input:unknown):Record<string,unknown>{
+  if(input&&typeof input==='object'&&!Array.isArray(input))return input as Record<string,unknown>;
+  if(typeof input==='string'){
+    try{const parsed=JSON.parse(input);if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))return parsed as Record<string,unknown>;}catch{}
+  }
+  return {};
+}
+
+function normalizeProspectInput(input:unknown={}){
+  const source=asRecord(input);
+  const next:Record<string,unknown>={...source};
+  const companyCandidate=[source.companyName,source.company_name,source.name,source.company].find(value=>typeof value==='string'&&value.trim());
+  if(typeof companyCandidate==='string')next.companyName=companyCandidate.trim();
   if(typeof next.website==='string'){
     const raw=next.website.trim();
     if(!raw)next.website=null;
@@ -43,7 +53,9 @@ prospectManagementRouter.post('/prospects',async(req,res)=>{
   try{
     const organizationId=await requireFleetOrganization(req);
     await requireFleetPermission(req,'prospects.manage');
-    return res.status(201).json({prospect:await prospectingService.create(organizationId,normalizeProspectInput(req.body??{}))});
+    const normalized=normalizeProspectInput(req.body??{});
+    console.info('Prospect create payload contract',{keys:Object.keys(asRecord(req.body??{})).sort(),source:typeof normalized.source==='string'?normalized.source:'unknown',companyNamePresent:typeof normalized.companyName==='string'&&normalized.companyName.length>0});
+    return res.status(201).json({prospect:await prospectingService.create(organizationId,normalized)});
   }catch(error){return fail(res,error)}
 });
 
