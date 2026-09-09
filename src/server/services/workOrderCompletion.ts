@@ -35,7 +35,7 @@ export class WorkOrderCompletionService {
     if (workOrder.status === 'in_progress') await workOrderExecutionService.transition(organizationId, workOrderId, 'review');
     const refreshed = await workOrderExecutionService.get(organizationId, workOrderId);
     if (!['review','authorized','in_progress'].includes(refreshed.workOrder.status)) throw new Error('Work order is not in a completable state');
-    return workOrderExecutionService.transition(organizationId, workOrderId, 'complete');
+    return workOrderExecutionService.transition(organizationId, workOrderId, 'completed');
   }
 }
 
