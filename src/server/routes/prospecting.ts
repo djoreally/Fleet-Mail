@@ -10,13 +10,12 @@ import { createAgentActionProposal } from '../services/agentActions.js';
 export const prospectingRouter=Router();
 const fail=(res:any,error:unknown)=>{if(error instanceof FleetAuthError)return fleetAuthFailure(res,error);const message=error instanceof Error?error.message:'Prospecting operation failed';return res.status(/not found/i.test(message)?404:/required|invalid|must|valid|incomplete|structured/i.test(message)?400:500).json({error:message});};
 
-prospectingRouter.get('/prospects',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.json({prospects:await prospectingService.list(org,{search:String(req.query.search||''),stage:String(req.query.stage||'')})});}catch(e){return fail(res,e)}});
+// CRUD ownership for /prospects lives exclusively in prospectManagementRouter.
+// This router owns prospect workflow/read-detail actions only.
 prospectingRouter.get('/prospects-attention',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.json(await prospectingService.attentionQueue(org));}catch(e){return fail(res,e)}});
 prospectingRouter.post('/prospects/discover',async(req,res)=>{try{await requireFleetOrganization(req);return res.json(await prospectDiscoveryService.discover(req.body??{}));}catch(e){return fail(res,e)}});
 prospectingRouter.post('/prospects/sync-inbox',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.json(await prospectInboxSyncService.sync(org,Number(req.body?.limit)||50));}catch(e){return fail(res,e)}});
-prospectingRouter.post('/prospects',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.status(201).json({prospect:await prospectingService.create(org,req.body??{})});}catch(e){return fail(res,e)}});
 prospectingRouter.get('/prospects/:id',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.json(await prospectingService.get(org,req.params.id));}catch(e){return fail(res,e)}});
-prospectingRouter.patch('/prospects/:id',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.json({prospect:await prospectingService.update(org,req.params.id,req.body??{})});}catch(e){return fail(res,e)}});
 prospectingRouter.post('/prospects/:id/contacts',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.status(201).json({contact:await prospectingService.addContact(org,req.params.id,req.body??{})});}catch(e){return fail(res,e)}});
 prospectingRouter.post('/prospects/:id/activities',async(req,res)=>{try{const org=await requireFleetOrganization(req);return res.status(201).json({activity:await prospectingService.addActivity(org,req.params.id,req.body??{})});}catch(e){return fail(res,e)}});
 prospectingRouter.post('/prospects/:id/research',async(req,res)=>{try{const org=await requireFleetOrganization(req);await prospectingService.research(org,req.params.id);const contactDiscovery=await prospectContactDiscoveryService.enrich(org,req.params.id);const refreshed=await prospectingService.get(org,req.params.id);return res.json({prospect:refreshed.prospect,contactDiscovery});}catch(e){return fail(res,e)}});
