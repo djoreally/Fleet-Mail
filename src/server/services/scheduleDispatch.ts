@@ -10,6 +10,7 @@ export class FleetOperationsError extends Error {
 const allowedDispatchStatuses = new Set(['assigned', 'accepted', 'en_route', 'arrived', 'working', 'completed', 'cancelled']);
 const allowedAppointmentStatuses = new Set(['scheduled', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show']);
 const inactiveStatuses = new Set(['completed', 'cancelled', 'no_show']);
+const inactiveDispatchStatuses = new Set(['completed','cancelled']);
 
 function cleanId(value: unknown, name: string): string {
   if (typeof value !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(value)) throw new FleetOperationsError(`${name} is invalid`, 400);
@@ -66,6 +67,15 @@ export class ScheduleDispatchService {
     if(conflict)throw new FleetOperationsError('Work order already has an active appointment',409);
   }
 
+  private async assertWorkOrderDispatch(token:string,org:string,workOrderId:unknown,excludeId?:string) {
+    if (!workOrderId) return;
+    const id=cleanId(workOrderId,'workOrderId');
+    const q=new URLSearchParams({select:'id,status,work_order_id',organization_id:`eq.${org}`,work_order_id:`eq.${id}`,limit:'200'});
+    const rows=await this.request<JsonRecord[]>(token,`dispatch_assignments?${q}`);
+    const conflict=rows.find(row=>row.id!==excludeId&&!inactiveDispatchStatuses.has(String(row.status)));
+    if(conflict)throw new FleetOperationsError('Work order already has an active dispatch assignment',409);
+  }
+
   private async assertAppointmentSlot(token: string, org: string, startsAt: string, endsAt: string, vehicleId?: unknown, excludeId?: string) {
     if (!vehicleId) return;
     const vehicle = cleanId(vehicleId, 'vehicleId');
@@ -87,7 +97,7 @@ export class ScheduleDispatchService {
     const q = new URLSearchParams({ select:'id,status,technician_id,resource_id,starts_at,appointment_id', organization_id:`eq.${org}`, limit:'200' });
     const rows = await this.request<JsonRecord[]>(token, `dispatch_assignments?${q}`);
     for (const row of rows) {
-      if (row.id === excludeId || ['completed','cancelled'].includes(String(row.status))) continue;
+      if (row.id === excludeId || inactiveDispatchStatuses.has(String(row.status))) continue;
       const sameTech = String(row.technician_id || '') === technicianId;
       const sameResource = Boolean(resourceId) && String(row.resource_id || '') === resourceId;
       if (!sameTech && !sameResource) continue;
@@ -158,7 +168,7 @@ export class ScheduleDispatchService {
   }
 
   private async dispatchState(token: string, org: string, dispatchId: string) {
-    const q = new URLSearchParams({ select:'id,technician_id,resource_id,appointment_id,starts_at,status', id:`eq.${dispatchId}`, organization_id:`eq.${org}`, limit:'1' });
+    const q = new URLSearchParams({ select:'id,work_order_id,technician_id,resource_id,appointment_id,starts_at,status', id:`eq.${dispatchId}`, organization_id:`eq.${org}`, limit:'1' });
     const [row] = await this.request<JsonRecord[]>(token, `dispatch_assignments?${q}`);
     if (!row) throw new FleetOperationsError('Dispatch not found', 404);
     return row;
@@ -179,7 +189,9 @@ export class ScheduleDispatchService {
       this.assertReference(token, org, 'resources', input.resourceId, 'resourceId'),
     ]);
     if (!workOrderId || !technicianId) throw new FleetOperationsError('Work order and technician are required', 400);
+    await this.assertWorkOrderDispatch(token,org,workOrderId);
     const appointment = input.appointmentId ? await this.appointmentWindow(token, org, input.appointmentId) : null;
+    if(appointment?.workOrderId&&appointment.workOrderId!==workOrderId)throw new FleetOperationsError('Appointment does not belong to the selected work order',409);
     const startsAt = input.startsAt ? isoDate(input.startsAt, 'startsAt') : appointment?.startsAt || null;
     if (startsAt && appointment) await this.assertDispatchSlot(token, org, technicianId, resourceId, startsAt, appointment.endsAt);
     const payload = { id:randomUUID(), organization_id:org, work_order_id:workOrderId, appointment_id:input.appointmentId||null, technician_id:technicianId, resource_id:resourceId, status, starts_at:startsAt };
@@ -199,6 +211,7 @@ export class ScheduleDispatchService {
     if (input.resourceId !== undefined) await this.assertReference(token, org, 'resources', input.resourceId, 'resourceId');
     if (appointmentId && technicianId) {
       const appointment = await this.appointmentWindow(token, org, appointmentId);
+      if(appointment.workOrderId&&String(current.work_order_id||'')!==appointment.workOrderId)throw new FleetOperationsError('Appointment does not belong to this dispatch work order',409);
       const start = input.startsAt !== undefined && input.startsAt ? isoDate(input.startsAt, 'startsAt') : appointment.startsAt;
       await this.assertDispatchSlot(token, org, cleanId(technicianId, 'technicianId'), resourceId ? cleanId(resourceId, 'resourceId') : null, start, appointment.endsAt, id);
     }
