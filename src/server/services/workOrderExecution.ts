@@ -29,16 +29,17 @@ const nonNegative = (value: unknown, field: string, fallback = 0) => {
   if (!Number.isFinite(number) || number < 0) throw new Error(`${field} must be zero or greater`);
   return number;
 };
+const canonicalWorkOrderStatus = (status: string) => status === 'complete' ? 'completed' : status;
 
 const EXECUTION_TRANSITIONS: Record<string, readonly string[]> = {
   scheduled: ['assigned','en_route','arrived','in_progress','cancelled'],
   assigned: ['en_route','arrived','in_progress','cancelled'],
   en_route: ['arrived','in_progress','cancelled'],
   arrived: ['in_progress','cancelled'],
-  in_progress: ['review','authorization_pending','complete','cancelled'],
-  review: ['authorization_pending','authorized','in_progress','complete','cancelled'],
+  in_progress: ['review','authorization_pending','completed','cancelled'],
+  review: ['authorization_pending','authorized','in_progress','completed','cancelled'],
   authorization_pending: ['authorized','review','cancelled'],
-  authorized: ['in_progress','review','complete','cancelled'],
+  authorized: ['in_progress','review','completed','cancelled'],
   complete: [],
   completed: [],
   cancelled: [],
@@ -82,11 +83,13 @@ export class WorkOrderExecutionService {
 
   async transition(organizationId: string, workOrderId: string, nextStatus: string) {
     const row = await this.workOrder(organizationId, workOrderId);
-    const allowed = EXECUTION_TRANSITIONS[row.status] ?? [];
-    if (!allowed.includes(nextStatus)) throw new Error(`Invalid work-order transition: ${row.status} → ${nextStatus}`);
+    const currentStatus = canonicalWorkOrderStatus(row.status);
+    const canonicalNext = canonicalWorkOrderStatus(nextStatus);
+    const allowed = EXECUTION_TRANSITIONS[currentStatus] ?? [];
+    if (!allowed.includes(canonicalNext)) throw new Error(`Invalid work-order transition: ${row.status} → ${nextStatus}`);
     const [updated] = await database().update(workOrders).set({
-      status: nextStatus,
-      ...(nextStatus === 'complete' ? { completedAt: new Date() } : {}),
+      status: canonicalNext,
+      ...(canonicalNext === 'completed' ? { completedAt: new Date() } : {}),
       updatedAt: new Date(),
     }).where(and(eq(workOrders.organizationId, organizationId), eq(workOrders.id, workOrderId))).returning();
     return updated;
