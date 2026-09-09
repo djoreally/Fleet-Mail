@@ -70,6 +70,27 @@ export function normalizeCustomerInput(input: Record<string, unknown>): Customer
   };
 }
 
+export function normalizeCustomerPatch(input: Record<string, unknown>) {
+  const patch: Record<string, unknown> = {};
+  if ('name' in input) patch.name = clean(input.name, 'Customer name');
+  if ('accountNumber' in input) patch.accountNumber = optional(input.accountNumber, 80);
+  if ('primaryContactName' in input) patch.primaryContactName = optional(input.primaryContactName, 200);
+  if ('primaryContactEmail' in input) patch.primaryContactEmail = optional(input.primaryContactEmail, 320);
+  if ('billingContactName' in input) patch.billingContactName = optional(input.billingContactName, 200);
+  if ('billingEmail' in input) patch.billingEmail = optional(input.billingEmail, 320);
+  if ('poRequired' in input) patch.poRequired = bool(input.poRequired);
+  if ('defaultPoNumber' in input) patch.defaultPoNumber = optional(input.defaultPoNumber, 100);
+  if ('paymentTerms' in input) patch.paymentTerms = optional(input.paymentTerms, 40) ?? 'net_30';
+  if ('taxStatus' in input) patch.taxStatus = optional(input.taxStatus, 40) ?? 'taxable';
+  if ('phone' in input) patch.phone = optional(input.phone, 50);
+  if ('status' in input) patch.status = optional(input.status, 40) ?? 'active';
+  if ('notes' in input) patch.notes = optional(input.notes, 2000);
+  const addressKeys=['billingAddressLine1','billingAddressLine2','billingCity','billingState','billingPostalCode','billingCountry'];
+  if (addressKeys.some(key=>key in input)) patch.billingAddress = address(input);
+  if (!Object.keys(patch).length) throw new Error('At least one customer field is required');
+  return patch;
+}
+
 export function normalizePartInput(input: Record<string, unknown>): PartInput {
   return {
     sku: clean(input.sku, 'SKU', 80).toUpperCase(),
@@ -93,10 +114,7 @@ export class OperationsDataService {
   async listCustomers(organizationId: string, search = '') {
     const db = database();
     const query = search.trim().slice(0, 100);
-    const where = and(
-      eq(customers.organizationId, organizationId),
-      query ? or(ilike(customers.name, `%${query}%`), ilike(customers.billingEmail, `%${query}%`)) : undefined,
-    );
+    const where = and(eq(customers.organizationId, organizationId), query ? or(ilike(customers.name, `%${query}%`), ilike(customers.billingEmail, `%${query}%`)) : undefined);
     return db.select({
       id: customers.id, name: customers.name, accountNumber: customers.accountNumber,
       primaryContactName: customers.primaryContactName, primaryContactEmail: customers.primaryContactEmail,
@@ -122,8 +140,8 @@ export class OperationsDataService {
   }
 
   async updateCustomer(organizationId: string, id: string, raw: Record<string, unknown>) {
-    const value = normalizeCustomerInput(raw);
-    const [updated] = await database().update(customers).set({ ...value, updatedAt: new Date() })
+    const patch = normalizeCustomerPatch(raw);
+    const [updated] = await database().update(customers).set({ ...patch, updatedAt: new Date() })
       .where(and(eq(customers.organizationId, organizationId), eq(customers.id, id))).returning();
     if (!updated) throw new Error('Customer not found');
     return updated;
@@ -149,31 +167,21 @@ export class OperationsDataService {
   async createPart(organizationId: string, raw: Record<string, unknown>) {
     const value = normalizePartInput(raw);
     const partId = randomUUID();
-    const [created] = await database().insert(parts).values({
-      id: partId, organizationId, sku: value.sku, name: value.name, description: value.description,
-      unitCost: value.unitCost?.toFixed(2), unitPrice: value.unitPrice?.toFixed(2),
-    }).returning();
-    await database().insert(inventory).values({
-      id: randomUUID(), organizationId, partId, locationId: value.locationId,
-      quantity: String(value.quantity), reorderPoint: String(value.reorderPoint),
-    });
+    const [created] = await database().insert(parts).values({ id: partId, organizationId, sku: value.sku, name: value.name, description: value.description, unitCost: value.unitCost?.toFixed(2), unitPrice: value.unitPrice?.toFixed(2) }).returning();
+    await database().insert(inventory).values({ id: randomUUID(), organizationId, partId, locationId: value.locationId, quantity: String(value.quantity), reorderPoint: String(value.reorderPoint) });
     return created;
   }
 
   async updatePart(organizationId: string, id: string, raw: Record<string, unknown>) {
     const value = normalizePartInput(raw);
-    const [updated] = await database().update(parts).set({
-      sku: value.sku, name: value.name, description: value.description,
-      unitCost: value.unitCost?.toFixed(2), unitPrice: value.unitPrice?.toFixed(2), updatedAt: new Date(),
-    }).where(and(eq(parts.organizationId, organizationId), eq(parts.id, id))).returning();
+    const [updated] = await database().update(parts).set({ sku: value.sku, name: value.name, description: value.description, unitCost: value.unitCost?.toFixed(2), unitPrice: value.unitPrice?.toFixed(2), updatedAt: new Date() }).where(and(eq(parts.organizationId, organizationId), eq(parts.id, id))).returning();
     if (!updated) throw new Error('Part not found');
     return updated;
   }
 
   async adjustInventory(organizationId: string, partId: string, quantity: unknown, reorderPoint: unknown) {
     const db = database();
-    const [existing] = await db.select({ id: inventory.id }).from(inventory)
-      .where(and(eq(inventory.organizationId, organizationId), eq(inventory.partId, partId))).limit(1);
+    const [existing] = await db.select({ id: inventory.id }).from(inventory).where(and(eq(inventory.organizationId, organizationId), eq(inventory.partId, partId))).limit(1);
     const values = { quantity: String(finite(quantity)), reorderPoint: String(finite(reorderPoint)), updatedAt: new Date() };
     if (existing) {
       const [updated] = await db.update(inventory).set(values).where(and(eq(inventory.organizationId, organizationId), eq(inventory.id, existing.id))).returning();
