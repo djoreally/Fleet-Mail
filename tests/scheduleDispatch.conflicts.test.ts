@@ -6,10 +6,19 @@ describe('Schedule and dispatch conflict contract', () => {
     const source = readFileSync('src/server/services/scheduleDispatch.ts', 'utf8');
     expect(source).toContain('assertAppointmentSlot');
     expect(source).toContain('assertWorkOrderSchedule');
+    expect(source).toContain('assertWorkOrderDispatch');
     expect(source).toContain('assertDispatchSlot');
     expect(source).toContain('overlapping appointment');
     expect(source).toContain('Work order already has an active appointment');
+    expect(source).toContain('Work order already has an active dispatch assignment');
     expect(source).toContain('overlapping dispatch');
+  });
+
+  it('binds a dispatch appointment to the same work order', () => {
+    const source = readFileSync('src/server/services/scheduleDispatch.ts', 'utf8');
+    expect(source).toContain('Appointment does not belong to the selected work order');
+    expect(source).toContain('Appointment does not belong to this dispatch work order');
+    expect(source).toContain('work_order_id');
   });
 
   it('checks availability in the same organization', () => {
