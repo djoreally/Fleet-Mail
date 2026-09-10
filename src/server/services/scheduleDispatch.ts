@@ -87,10 +87,10 @@ export class ScheduleDispatchService {
 
   private async appointmentWindow(token: string, org: string, appointmentId: unknown) {
     const id = cleanId(appointmentId, 'appointmentId');
-    const q = new URLSearchParams({ select:'id,starts_at,ends_at,vehicle_id,work_order_id', id:`eq.${id}`, organization_id:`eq.${org}`, limit:'1' });
+    const q = new URLSearchParams({ select:'id,starts_at,ends_at,vehicle_id,work_order_id,status', id:`eq.${id}`, organization_id:`eq.${org}`, limit:'1' });
     const [row] = await this.request<JsonRecord[]>(token, `appointments?${q}`);
     if (!row) throw new FleetOperationsError('Appointment not found', 404);
-    return { id, startsAt:isoDate(row.starts_at,'appointment startsAt'), endsAt:isoDate(row.ends_at,'appointment endsAt'), vehicleId:row.vehicle_id?String(row.vehicle_id):null, workOrderId:row.work_order_id?String(row.work_order_id):null };
+    return { id, status: String(row.status || 'scheduled'), startsAt:isoDate(row.starts_at,'appointment startsAt'), endsAt:isoDate(row.ends_at,'appointment endsAt'), vehicleId:row.vehicle_id?String(row.vehicle_id):null, workOrderId:row.work_order_id?String(row.work_order_id):null };
   }
 
   private async assertDispatchSlot(token: string, org: string, technicianId: string, resourceId: string | null, startsAt: string, endsAt: string, excludeId?: string) {
@@ -156,8 +156,13 @@ export class ScheduleDispatchService {
     if (input.vehicleId !== undefined) await this.assertReference(token, org, 'vehicles', input.vehicleId, 'vehicleId');
     const workOrderId=input.workOrderId!==undefined?input.workOrderId:current.workOrderId;
     const vehicleId = input.vehicleId !== undefined ? input.vehicleId : current.vehicleId;
-    if(workOrderId)await this.assertWorkOrderSchedule(token,org,workOrderId,id);
-    if (vehicleId) await this.assertAppointmentSlot(token, org, startsAt, endsAt, vehicleId, id);
+    // Closing or annotating historical appointments must not reserve a slot.
+    // Reactivation still runs both conflict checks against the effective status.
+    const nextStatus = input.status !== undefined ? String(input.status) : current.status;
+    if (!inactiveStatuses.has(nextStatus)) {
+      if(workOrderId)await this.assertWorkOrderSchedule(token,org,workOrderId,id);
+      if (vehicleId) await this.assertAppointmentSlot(token, org, startsAt, endsAt, vehicleId, id);
+    }
     return this.request<JsonRecord[]>(token, `appointments?id=eq.${id}&organization_id=eq.${org}`, { method:'PATCH', body:JSON.stringify(payload) });
   }
 
