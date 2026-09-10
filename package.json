@@ -22,7 +22,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:validate": "vitest run tests/schema.contract.test.ts",
     "db:smoke": "drizzle-kit push --force && npm run db:migrate",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "build:cpanel": "vite build && esbuild passenger.ts --bundle --platform=node --format=esm --packages=external --sourcemap --outfile=dist/passenger.js"
   },
   "dependencies": {
     "@browserbasehq/sdk": "^2.9.0",
