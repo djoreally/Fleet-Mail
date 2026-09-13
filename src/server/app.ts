@@ -2,6 +2,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { apiRouter } from './routes/api.js';
 import { googleRouter } from './routes/google.js';
 import { agentmailCrudRouter } from './routes/agentmailCrud.js';
+import { agentMailOnboardingRouter } from './routes/agentMailOnboarding.js';
 import { agentMailAttachmentsRouter } from './routes/agentMailAttachments.js';
 import { agentActionsRouter } from './routes/agentActions.js';
 import { agentObservabilityRouter } from './routes/agentObservability.js';
@@ -50,7 +51,7 @@ export function createApp() {
   app.get('/api/access',requireFleetSession,async(req,res)=>{try{return res.json(await getFleetAccessContext(req))}catch(error){return fleetAuthFailure(res,error)}});
   app.use('/api/neon',disabledDatabaseControlPlane);app.use('/api/drizzle',disabledDatabaseControlPlane);
   app.use('/api/vehicles',requireFleetSession);app.use('/api/contacts',requireFleetSession);app.use('/api/agent',requireFleetSession);app.use('/api/team',requireFleetSession);app.use('/api/technician',requireFleetSession);app.use('/api/dispatcher',requireFleetSession);app.use('/api/fleet-service',requireFleetSession);
-  app.use('/api/chat',requireFleetSession);app.use('/api/chat',enforceAgentMailInboxScope);app.use('/api/rewrite-tone',requireFleetSession);app.use('/api/generate-draft',requireFleetSession);app.use('/api/summarize-email',requireFleetSession);app.use('/api/agentmail',requireFleetSession);app.use('/api/agentmail',enforceAgentMailInboxScope);
+  app.use('/api/chat',requireFleetSession);app.use('/api/chat',enforceAgentMailInboxScope);app.use('/api/rewrite-tone',requireFleetSession);app.use('/api/generate-draft',requireFleetSession);app.use('/api/summarize-email',requireFleetSession);app.use('/api/agentmail',requireFleetSession);app.use('/api/agentmail/onboarding',agentMailOnboardingRouter);app.use('/api/agentmail',enforceAgentMailInboxScope);
   app.use('/api/chat',chatAttachmentExtractionMiddleware);app.use('/api/chat',fleetAgentRuntimeMiddleware);app.use('/api/chat',tenantChatRouter);app.use('/api/chat',(req,res)=>req.method==='POST'?res.status(410).json({error:'Legacy chat route is disabled'}):res.status(404).end());
   app.use('/api',dashboardRouter);app.use('/api',agentMailAttachmentsRouter);app.use('/api',vehicleManagementRouter);app.use('/api',apiRouter);app.use('/api',vehicle360Router);app.use('/api/google',googleRouter);app.use('/api/team',teamRouter);app.use('/api/technician',technicianRouter);app.use('/api/dispatcher',dispatcherRouter);app.use('/api/agentmail/crud',agentmailCrudRouter);app.use('/api/agent',agentObservabilityRouter);app.use('/api/agent/actions',agentActionsRouter);app.use('/api/operations',operationsRouter);app.use('/api/operations',customerPartsRouter);app.use('/api/operations',maintenanceIntelligenceRouter);app.use('/api/operations',workOrderCompletionRouter);app.use('/api/operations',workOrderExecutionRouter);app.use('/api/operations',prospectManagementRouter);app.use('/api/operations',prospectingRouter);app.use('/api/fleet-service',fleetServiceRouter);app.use('/api/fleet-operations',scheduleDispatchRouter);app.use('/api/fleet',paymentReconciliationRouter);app.use('/api/fleet',financialReadModelRouter);app.use('/api/fleet',financialDocumentsRouter);return app;
 }
