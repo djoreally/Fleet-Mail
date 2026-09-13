@@ -10,7 +10,7 @@ const tenantTables = [
   'technicians','resources','availability','work_orders','appointments','dispatch_assignments',
   'dispatch_status_history','inspections','authorizations','maintenance_schedules','maintenance_events',
   'parts','inventory','part_usage','estimates','invoices','invoice_line_items','payments','email_threads',
-  'emails','email_summaries','documents','audit_events','chat_messages',
+  'emails','email_summaries','documents','audit_events','chat_messages','agent_inbox_events','agent_runs',
 ];
 
 export const SCHEMA_TABLES: TableDefinition[] = [
