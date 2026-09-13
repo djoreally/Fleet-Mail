@@ -19,6 +19,7 @@ import { ForgotPasswordPage } from './components/auth/ForgotPasswordPage';
 import { ResetPasswordPage } from './components/auth/ResetPasswordPage';
 import { VehicleWorkspace } from './components/vehicles/VehicleWorkspace';
 import { fleetFetch } from './lib/fleetApi';
+import { AgentMailOnboardingGate } from './components/onboarding/AgentMailOnboardingGate';
 import {
   EmailMessage,
   ChatMessage,
@@ -33,7 +34,7 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [currentTab, setCurrentTab] = useState<AppTab>('dashboard');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [activeInbox, setActiveInbox] = useState<string>('moms@agentmail.to');
+  const [activeInbox, setActiveInbox] = useState<string>('');
   const [emails, setEmails] = useState<EmailMessage[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
@@ -52,7 +53,7 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
     importantEmailsOnly: true,
     dailyAIDigest: false,
     connectedAccounts: [
-      { id: 'acc-1', name: 'AgentMail Active Inbox (Dots-3)', type: 'agentmail', email: 'moms@agentmail.to' },
+      { id: 'acc-1', name: 'AgentMail Active Inbox', type: 'agentmail', email: '' },
       { id: 'acc-2', name: 'Work Email (Google)', type: 'google', email: 'user@company.com' },
       { id: 'acc-3', name: 'Personal Calendar (Outlook)', type: 'outlook', email: 'user@outlook.com' }
     ]
@@ -71,7 +72,7 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
 
   const fetchStatus = async () => {
     try {
-      const res = await fetch('/api/status');
+      const res = await fleetFetch('/api/status');
       if (res.ok) {
         const data = await res.json();
         setStatus(data);
@@ -220,12 +221,12 @@ function LoadingScreen() {
 
 export default function App() {
   return <AppShell
-    home={({ navigate, isAuthenticated, signOut }) => isAuthenticated ? <FleetWorkspaceApp onSignOut={() => void signOut()} /> : <HomePage onNavigate={navigate} />}
+    home={({ navigate, isAuthenticated, signOut }) => isAuthenticated ? <AgentMailOnboardingGate><FleetWorkspaceApp onSignOut={() => void signOut()} /></AgentMailOnboardingGate> : <HomePage onNavigate={navigate} />}
     signIn={({ navigate, refreshSession }) => <SignInPage onNavigate={path => path === '/app' ? void refreshSession().then(() => navigate('/app')) : navigate(path)} />}
     signUp={({ navigate, refreshSession }) => <SignUpPage onNavigate={path => path === '/app' ? void refreshSession().then(() => navigate('/app')) : navigate(path)} />}
     forgotPassword={({ navigate }) => <ForgotPasswordPage onNavigate={navigate} />}
     resetPassword={({ navigate }) => <ResetPasswordPage onNavigate={navigate} />}
-    app={({ signOut, user }) => <FleetWorkspaceApp onSignOut={() => void signOut()} userEmail={user?.email} userName={user?.name} />}
+    app={({ signOut, user }) => <AgentMailOnboardingGate><FleetWorkspaceApp onSignOut={() => void signOut()} userEmail={user?.email} userName={user?.name} /></AgentMailOnboardingGate>}
     loading={<LoadingScreen />}
   />;
 }
