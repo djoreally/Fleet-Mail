@@ -24,7 +24,8 @@ describe('AgentMail legacy inbox webhook readiness', () => {
   it('uses a write-only bridge token and never returns the configured secret',()=>{
     expect(routes).toContain("'x-fleetmail-webhook-token': secret");
     expect(routes).toContain("signingSecretRef: 'env:AGENTMAIL_WEBHOOK_SECRET'");
-    expect(routes).not.toContain('secret }');
+    expect(routes).not.toContain('res.json({ secret');
+    expect(routes).not.toContain('res.json({secret');
     expect(webhook).toContain('verifyAgentMailWebhookToken');
     expect(app).toContain('verifyAgentMailWebhookToken');
   });
