@@ -1,9 +1,64 @@
 {
   "rewrites": [
-    { "source": "/sign-in", "destination": "/index.html" },
-    { "source": "/sign-up", "destination": "/index.html" },
-    { "source": "/forgot-password", "destination": "/index.html" },
-    { "source": "/reset-password", "destination": "/index.html" },
-    { "source": "/app", "destination": "/index.html" }
+    {
+      "source": "/api/agent/:path*",
+      "destination": "/api/agent/[...path]"
+    },
+    {
+      "source": "/api/agentmail/:path*",
+      "destination": "/api/agentmail/[...path]"
+    },
+    {
+      "source": "/api/dispatcher/:path*",
+      "destination": "/api/dispatcher/[...path]"
+    },
+    {
+      "source": "/api/fleet-operations/:path*",
+      "destination": "/api/fleet-operations/[...path]"
+    },
+    {
+      "source": "/api/fleet-service/:path*",
+      "destination": "/api/fleet-service/[...path]"
+    },
+    {
+      "source": "/api/fleet/:path*",
+      "destination": "/api/fleet/[...path]"
+    },
+    {
+      "source": "/api/google/:path*",
+      "destination": "/api/google/[...path]"
+    },
+    {
+      "source": "/api/operations/:path*",
+      "destination": "/api/operations/[...path]"
+    },
+    {
+      "source": "/api/technician/:path*",
+      "destination": "/api/technician/[...path]"
+    },
+    {
+      "source": "/api/vehicles/:path*",
+      "destination": "/api/vehicles/[...path]"
+    },
+    {
+      "source": "/sign-in",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/sign-up",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/forgot-password",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/reset-password",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/app",
+      "destination": "/index.html"
+    }
   ]
 }
