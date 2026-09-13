@@ -1,5 +1,9 @@
 import { Router } from 'express';
+import { and, eq, or } from 'drizzle-orm';
+import { getDb } from '../../db/index.js';
+import { agentmailWebhooks, inboxes } from '../../db/drizzleSchema.js';
 import { getAgentMailClient } from '../services/agentmail.js';
+import { fleetAuthFailure, requireFleetOrganization, requireFleetRole } from '../services/fleetAuth.js';
 
 export const agentmailCrudRouter = Router();
 
@@ -28,6 +32,87 @@ function fail(res: any, error: unknown) {
   const message = error instanceof Error ? error.message : 'AgentMail request failed';
   return res.status(message.includes('configured') ? 503 : 502).json({ error: message });
 }
+
+function database() {
+  const db = getDb();
+  if (!db) throw new Error('Database is not configured');
+  return db;
+}
+
+function webhookUrl() {
+  const explicit = process.env.APP_PUBLIC_URL?.trim();
+  if (explicit) return `${explicit.replace(/\/$/, '')}/api/webhooks/agentmail`;
+  const productionHost = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  if (productionHost) return `https://${productionHost.replace(/^https?:\/\//, '').replace(/\/$/, '')}/api/webhooks/agentmail`;
+  return 'https://fleetmail.vercel.app/api/webhooks/agentmail';
+}
+
+function webhookRows(result: any) {
+  return Array.isArray(result?.webhooks) ? result.webhooks : Array.isArray(result) ? result : [];
+}
+
+function webhookId(value: any) {
+  return String(value?.webhookId || value?.webhook_id || value?.id || '').trim();
+}
+
+
+agentmailCrudRouter.get('/webhook-status', async (req, res) => {
+  const id = inbox(res); if (!id) return;
+  try {
+    const organizationId = await requireFleetOrganization(req);
+    await requireFleetRole(req, ['owner', 'admin']);
+    const targetUrl = webhookUrl();
+    const listed = await client().inboxes.webhooks.list(id);
+    const hooks = webhookRows(listed);
+    const active = hooks.find((hook: any) => String(hook?.url || '') === targetUrl && hook?.enabled !== false);
+    const [localInbox] = await database().select().from(inboxes).where(and(eq(inboxes.organizationId, organizationId), or(eq(inboxes.externalInboxId, id), eq(inboxes.email, id)))).limit(1);
+    if (!localInbox) return res.status(404).json({ error: 'Organization AgentMail inbox record was not found' });
+    const localRows = await database().select().from(agentmailWebhooks).where(and(eq(agentmailWebhooks.organizationId, organizationId), eq(agentmailWebhooks.inboxId, localInbox.id))).limit(20);
+    return res.json({ ready: Boolean(active), inbox: id, targetUrl, webhookId: active ? webhookId(active) : null, persisted: Boolean(active && localRows.some(row => row.externalWebhookId === webhookId(active))) });
+  } catch (error) {
+    return fleetAuthFailure(res, error);
+  }
+});
+
+agentmailCrudRouter.post('/webhook-ensure', async (req, res) => {
+  const id = inbox(res); if (!id || !confirmed(req, res)) return;
+  try {
+    const organizationId = await requireFleetOrganization(req);
+    await requireFleetRole(req, ['owner', 'admin']);
+    const secret = process.env.AGENTMAIL_WEBHOOK_SECRET?.trim();
+    if (!secret) return res.status(503).json({ error: 'AGENTMAIL_WEBHOOK_SECRET is not configured' });
+    const targetUrl = webhookUrl();
+    const listed = await client().inboxes.webhooks.list(id);
+    const hooks = webhookRows(listed);
+    let hook = hooks.find((candidate: any) => String(candidate?.url || '') === targetUrl && candidate?.enabled !== false);
+    let created = false;
+    if (!hook) {
+      hook = await client().inboxes.webhooks.create(id, {
+        url: targetUrl,
+        eventTypes: ['message.received'],
+        headers: { 'x-fleetmail-webhook-token': secret },
+      });
+      created = true;
+    }
+    const externalWebhookId = webhookId(hook);
+    if (!externalWebhookId) throw new Error('AgentMail did not return a webhook id');
+    const [localInbox] = await database().select().from(inboxes).where(and(eq(inboxes.organizationId, organizationId), or(eq(inboxes.externalInboxId, id), eq(inboxes.email, id)))).limit(1);
+    if (!localInbox) return res.status(404).json({ error: 'Organization AgentMail inbox record was not found' });
+    const [existing] = await database().select().from(agentmailWebhooks).where(and(eq(agentmailWebhooks.organizationId, organizationId), eq(agentmailWebhooks.externalWebhookId, externalWebhookId))).limit(1);
+    if (!existing) await database().insert(agentmailWebhooks).values({
+      organizationId,
+      podId: localInbox.podId || null,
+      inboxId: localInbox.id,
+      externalWebhookId,
+      signingSecretRef: 'env:AGENTMAIL_WEBHOOK_SECRET',
+      eventTypes: ['message.received'],
+      status: 'active',
+    });
+    return res.json({ ready: true, created, inbox: id, targetUrl, webhookId: externalWebhookId });
+  } catch (error) {
+    return fleetAuthFailure(res, error);
+  }
+});
 
 agentmailCrudRouter.get('/messages/search', async (req, res) => {
   const id = inbox(res); if (!id) return;
