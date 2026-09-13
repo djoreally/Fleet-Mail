@@ -62,3 +62,16 @@ agentObservabilityRouter.post('/runs/:id/propose-send',async(req,res)=>{
     return res.json({draft:payload,action:createAgentActionProposal('email.send',payload,organizationId),runId:run.id});
   }catch(error){return fleetAuthFailure(res,error);}
 });
+
+
+agentObservabilityRouter.post('/runs/:id/consume',async(req,res)=>{
+  try{
+    const organizationId=await requireFleetOrganization(req);
+    await requireFleetRole(req,['owner','admin']);
+    const [run]=await database().select().from(agentRuns).where(eq(agentRuns.id,req.params.id)).limit(1);
+    if(!run||run.organizationId!==organizationId)return res.status(404).json({error:'Prepared draft not found'});
+    const output=run.output&&typeof run.output==='object'&&!Array.isArray(run.output)?run.output as Record<string,unknown>:{};
+    await database().update(agentRuns).set({output:{...output,consumedAt:new Date().toISOString()},updatedAt:new Date()}).where(eq(agentRuns.id,run.id));
+    return res.json({consumed:true,runId:run.id});
+  }catch(error){return fleetAuthFailure(res,error);}
+});
