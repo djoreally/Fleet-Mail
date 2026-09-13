@@ -4,6 +4,7 @@ import { getDb } from '../../db/index.js';
 import { agentInboxEvents, agentRuns } from '../../db/drizzleSchema.js';
 import { fleetAuthFailure, requireFleetOrganization, requireFleetRole } from '../services/fleetAuth.js';
 import { prospectAgentQueueService } from '../services/prospectAgentQueue.js';
+import { createAgentActionProposal } from '../services/agentActions.js';
 
 export const agentObservabilityRouter=Router();
 
@@ -42,5 +43,22 @@ agentObservabilityRouter.post('/queue/process',async(req,res)=>{
     const organizationId=await requireFleetOrganization(req);
     await requireFleetRole(req,['owner','admin']);
     return res.json(await prospectAgentQueueService.process(organizationId,Number(req.body?.limit)||5));
+  }catch(error){return fleetAuthFailure(res,error);}
+});
+
+
+agentObservabilityRouter.post('/runs/:id/propose-send',async(req,res)=>{
+  try{
+    const organizationId=await requireFleetOrganization(req);
+    await requireFleetRole(req,['owner','admin']);
+    const [run]=await database().select().from(agentRuns).where(eq(agentRuns.id,req.params.id)).limit(1);
+    if(!run||run.organizationId!==organizationId)return res.status(404).json({error:'Prepared draft not found'});
+    if(run.kind!=='prospect_followup_draft'||run.status!=='succeeded')return res.status(409).json({error:'Agent run does not contain a sendable prepared draft'});
+    const output=run.output&&typeof run.output==='object'&&!Array.isArray(run.output)?run.output as Record<string,unknown>:{};
+    const draft=output.draft&&typeof output.draft==='object'&&!Array.isArray(output.draft)?output.draft as Record<string,unknown>:{};
+    const to=String(draft.to||'').trim(),subject=String(draft.subject||'').trim(),body=String(draft.text||'').trim();
+    if(!to||!subject||!body)return res.status(409).json({error:'Prepared draft is incomplete'});
+    const payload={...draft,prospectId:run.entityId||draft.prospectId};
+    return res.json({draft:payload,action:createAgentActionProposal('email.send',payload,organizationId),runId:run.id});
   }catch(error){return fleetAuthFailure(res,error);}
 });
