@@ -3,6 +3,7 @@ import { desc, eq } from 'drizzle-orm';
 import { getDb } from '../../db/index.js';
 import { agentInboxEvents, agentRuns } from '../../db/drizzleSchema.js';
 import { fleetAuthFailure, requireFleetOrganization, requireFleetRole } from '../services/fleetAuth.js';
+import { prospectAgentQueueService } from '../services/prospectAgentQueue.js';
 
 export const agentObservabilityRouter=Router();
 
@@ -24,5 +25,22 @@ agentObservabilityRouter.get('/inbox-events',async(req,res)=>{
     await requireFleetRole(req,['owner','admin']);
     const rows=await database().select().from(agentInboxEvents).where(eq(agentInboxEvents.organizationId,organizationId)).orderBy(desc(agentInboxEvents.receivedAt)).limit(limitOf(req.query.limit));
     return res.json({events:rows});
+  }catch(error){return fleetAuthFailure(res,error);}
+});
+
+
+agentObservabilityRouter.post('/queue/prospects',async(req,res)=>{
+  try{
+    const organizationId=await requireFleetOrganization(req);
+    await requireFleetRole(req,['owner','admin']);
+    return res.status(202).json(await prospectAgentQueueService.enqueueAttention(organizationId));
+  }catch(error){return fleetAuthFailure(res,error);}
+});
+
+agentObservabilityRouter.post('/queue/process',async(req,res)=>{
+  try{
+    const organizationId=await requireFleetOrganization(req);
+    await requireFleetRole(req,['owner','admin']);
+    return res.json(await prospectAgentQueueService.process(organizationId,Number(req.body?.limit)||5));
   }catch(error){return fleetAuthFailure(res,error);}
 });
