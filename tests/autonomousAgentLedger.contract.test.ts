@@ -14,15 +14,7 @@ describe('Autonomous agent ledger contract', () => {
     expect(migration).toContain('app.is_org_member(organization_id)');
     expect(schema).toContain("pgTable('agent_inbox_events'");
     expect(schema).toContain("pgTable('agent_runs'");
-    it('surfaces prospect replies and follow-up attention in the selling workspace',()=>{
-    const ui=readFileSync('src/components/operations/ProspectCommandCenter.tsx','utf8');
-    expect(ui).toContain('/api/operations/prospects-attention');
-    expect(ui).toContain('Needs attention');
-    expect(ui).toContain('repliesWaiting');
-    expect(ui).toContain('overdue');
-    expect(ui).toContain('Draft');
   });
-});
 
   it('records AgentMail webhook intake and run completion/failure',()=>{
     expect(webhook).toContain('db.insert(agentInboxEvents)');
@@ -37,5 +29,14 @@ describe('Autonomous agent ledger contract', () => {
     expect(route).toContain("eq(agentRuns.organizationId,organizationId)");
     expect(route).toContain("eq(agentInboxEvents.organizationId,organizationId)");
     expect(app).toContain("app.use('/api/agent',agentObservabilityRouter)");
+  });
+
+  it('surfaces prospect replies and follow-up attention in the selling workspace',()=>{
+    const ui=readFileSync('src/components/operations/ProspectCommandCenter.tsx','utf8');
+    expect(ui).toContain('/api/operations/prospects-attention');
+    expect(ui).toContain('Needs attention');
+    expect(ui).toContain('repliesWaiting');
+    expect(ui).toContain('overdue');
+    expect(ui).toContain('Draft');
   });
 });
