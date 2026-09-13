@@ -132,7 +132,7 @@ function FleetWorkspaceApp({ onSignOut, userEmail, userName }: { onSignOut?: () 
     handleSendChatMessage(`Draft a professional outreach and relationship update for ${contact.name} (${contact.email}) at ${contact.company || 'their organization'}${contact.role ? `, who serves as ${contact.role}` : ''}. Notes: "${contact.notes || 'Discuss recent project milestones and strategic alignment'}"`);
   };
 
-  useEffect(() => { fetchEmails(true); const interval = setInterval(() => fetchEmails(false), 10000); return () => clearInterval(interval); }, [activeInbox, fetchEmails]);
+  useEffect(() => { if (!activeInbox) return; fetchEmails(true); const interval = setInterval(() => fetchEmails(false), 10000); return () => clearInterval(interval); }, [activeInbox, fetchEmails]);
 
   const handleSendEmail = async (payload: SendEmailPayload): Promise<boolean> => {
     try { const res = await fleetFetch('/api/agentmail/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); if (res.ok) { await fetchEmails(false); return true; } return false; }
