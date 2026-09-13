@@ -36,7 +36,15 @@ function disabledDatabaseControlPlane(_req: Request, res: Response) { return res
 export function createApp() {
   const app = express();
   app.post('/api/webhooks/agentmail', express.raw({ type: 'application/json', limit: '1mb' }), async (req, res) => { const raw=Buffer.isBuffer(req.body)?req.body:Buffer.from('');const secret=process.env.AGENTMAIL_WEBHOOK_SECRET?.trim()||'';if(!secret||!verifyAgentMailWebhook(raw,req.headers as Record<string,unknown>,secret))return res.status(401).json({error:'invalid_signature'});try{const payload=JSON.parse(raw.toString('utf8'));const result=await prospectWebhookService.handle(payload);return res.status(200).json({accepted:true,...result})}catch(error){console.error('AgentMail webhook processing failed',error instanceof Error?error.message:error);return res.status(500).json({error:'webhook_processing_failed'})}});
-  app.use(express.json({ limit: '10mb' }));app.use(express.urlencoded({extended:true}));app.use(fleetMutationLedgerMiddleware);
+  const jsonParser=express.json({ limit: '10mb' });
+  const urlencodedParser=express.urlencoded({extended:true});
+  app.use((req,res,next)=>{
+    let preParsedBody:unknown;
+    try{preParsedBody=req.body;}catch{return res.status(400).json({error:'invalid_request_body'});}
+    if(preParsedBody!==undefined&&preParsedBody!==null)return next();
+    return jsonParser(req,res,error=>error?next(error):urlencodedParser(req,res,next));
+  });
+  app.use(fleetMutationLedgerMiddleware);
   app.get('/api/status',async(req,res)=>{const atlasKey=process.env.ATLASCLOUD_API_KEY;const agentKey=process.env.AGENTMAIL_API_KEY;const status:Record<string,unknown>={atlasCloudConfigured:Boolean(atlasKey&&atlasKey!=='your-atlascloud-api-key'&&atlasKey.trim()!==''),agentMailConfigured:Boolean(agentKey&&agentKey!=='your-agentmail-api-key'&&agentKey.trim()!==''),neonConfigured:Boolean(serverConfig.neonDataApiUrl&&serverConfig.neonAuthUrl),googleConfigured:Boolean(process.env.GOOGLE_CLIENT_ID&&process.env.GOOGLE_CLIENT_SECRET&&process.env.GOOGLE_TOKEN_ENCRYPTION_KEY),firecrawlConfigured:Boolean(process.env.FIRECRAWL_API_KEY?.trim()),browserbaseConfigured:Boolean(process.env.BROWSERBASE_API_KEY?.trim())};if(req.header('authorization')?.startsWith('Bearer ')){try{const activeInbox=await resolveOrganizationAgentMailInbox(req);status.defaultInbox=activeInbox;status.activeInbox=activeInbox}catch{}}return res.json(status)});
   app.get('/api/access',requireFleetSession,async(req,res)=>{try{return res.json(await getFleetAccessContext(req))}catch(error){return fleetAuthFailure(res,error)}});
   app.use('/api/neon',disabledDatabaseControlPlane);app.use('/api/drizzle',disabledDatabaseControlPlane);
