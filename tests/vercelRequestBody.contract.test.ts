@@ -9,3 +9,15 @@ describe('Vercel request body compatibility', () => {
     expect(source).toContain('return jsonParser(req,res');
   });
 });
+
+describe('Vercel deep API routing', () => {
+  it('rewrites splat API namespaces to their catch-all functions', () => {
+    const config = JSON.parse(readFileSync('vercel.json', 'utf8'));
+    for (const prefix of ['agent','agentmail','dispatcher','fleet-operations','fleet-service','fleet','google','operations','technician','vehicles']) {
+      expect(config.rewrites).toContainEqual({
+        source: `/api/${prefix}/:path*`,
+        destination: `/api/${prefix}/[...path]`,
+      });
+    }
+  });
+});
